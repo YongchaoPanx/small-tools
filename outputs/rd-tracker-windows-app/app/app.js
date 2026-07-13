@@ -73,6 +73,7 @@
       leftCollapsed: false,
       detailOpen: false,
       selectedId: null,
+      focusTarget: "",
     },
     requirements: [],
   };
@@ -167,6 +168,7 @@
     dom.contentArea.addEventListener("click", handleContentClick);
     dom.contentArea.addEventListener("change", handleContentChange);
     dom.detailPanel.addEventListener("click", handleDetailClick);
+    document.addEventListener("click", handleOutsideDetailClick);
   }
 
   function setView(view) {
@@ -246,10 +248,9 @@
     }
     dom.todoList.className = "todo-list";
     dom.todoList.innerHTML = todos
-      .slice(0, 10)
       .map(
         (item) => `
-          <button type="button" class="todo-item" data-action="select-req" data-id="${item.reqId}">
+          <button type="button" class="todo-item" data-action="todo-jump" data-id="${item.reqId}" data-focus-target="${h(item.focusTarget || "")}">
             <strong>${h(item.title)}</strong>
             <span>${h(item.meta)}</span>
           </button>
@@ -434,11 +435,10 @@
           <button type="button" data-action="edit-req" data-id="${req.id}">编辑</button>
           <button type="button" data-action="duplicate-req" data-id="${req.id}">复制</button>
           <button type="button" data-action="complete-req" data-id="${req.id}">完成</button>
-          <button type="button" data-action="close-detail">关闭</button>
         </div>
       </div>
 
-      <section class="detail-section">
+      <section class="detail-section" id="${h(focusId("section", "actions"))}">
         <h3>当前推进</h3>
         <div class="summary-grid">
           <div class="summary-item"><span>下一步动作</span><strong>${primary ? h(primary.content) : "未设置"}</strong></div>
@@ -491,6 +491,7 @@
         </div>
       </section>
     `;
+    focusPendingDetailTarget();
   }
 
   function renderActions(req) {
@@ -502,7 +503,7 @@
           .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || (a.plannedEndAt || "9999").localeCompare(b.plannedEndAt || "9999"))
           .map(
             (action) => `
-              <div class="entity-card">
+              <div class="entity-card" id="${h(focusId("action", action.id))}">
                 <div class="entity-card-head">
                   <div>
                     <h4>${h(action.content)}</h4>
@@ -559,7 +560,7 @@
     const delivery = computeBranchDelivery(branch);
     const currentGate = (branch.gates || []).find((gate) => gate.isCurrent) || (branch.gates || [])[0];
     return `
-      <div class="entity-card">
+      <div class="entity-card" id="${h(focusId("branch", branch.id))}">
         <div class="entity-card-head">
           <div>
             <h4>${h(branch.name || "未命名分支")}</h4>
@@ -572,6 +573,7 @@
           </div>
           <div class="compact-actions">
             ${branch.repositoryUrl ? `<button type="button" data-action="open-url" data-url="${h(branch.repositoryUrl)}">仓库</button>` : ""}
+            <button type="button" data-action="export-branch-pr-links" data-id="${req.id}" data-branch-id="${branch.id}">导出PR链接</button>
             <button type="button" data-action="edit-branch" data-id="${req.id}" data-branch-id="${branch.id}">编辑</button>
             <button type="button" data-action="add-pr" data-id="${req.id}" data-branch-id="${branch.id}">新增PR</button>
             <button type="button" data-action="add-gate" data-id="${req.id}" data-branch-id="${branch.id}">门禁</button>
@@ -605,7 +607,7 @@
           ${branch.prs
             .map(
               (pr) => `
-                <tr>
+                <tr id="${h(focusId("pr", pr.id))}">
                   <td>
                     <strong>${h(pr.title || pr.prNo || "未命名PR")}</strong>
                     <div class="meta-line">
@@ -620,7 +622,8 @@
                     <div class="compact-actions">
                       ${pr.prUrl ? `<button type="button" data-action="open-url" data-url="${h(pr.prUrl)}">打开</button>` : ""}
                       <button type="button" data-action="edit-pr" data-id="${req.id}" data-branch-id="${branch.id}" data-pr-id="${pr.id}">编辑</button>
-                      <button type="button" data-action="add-test" data-id="${req.id}" data-branch-id="${branch.id}" data-pr-id="${pr.id}">测试</button>
+                      <button type="button" data-action="complete-pr-tests" data-id="${req.id}" data-branch-id="${branch.id}" data-pr-id="${pr.id}">测试全过</button>
+                      <button type="button" data-action="add-test" data-id="${req.id}" data-branch-id="${branch.id}" data-pr-id="${pr.id}">新增测试</button>
                       ${
                         !pr.isMerged
                           ? `<button type="button" data-action="merge-pr" data-id="${req.id}" data-branch-id="${branch.id}" data-pr-id="${pr.id}">合入</button>`
@@ -647,14 +650,16 @@
               <button
                 type="button"
                 class="pill test-chip ${testStatusClass(test.status)}"
-                data-action="edit-test"
+                data-action="toggle-test-success"
                 data-id="${req.id}"
                 data-branch-id="${branch.id}"
                 data-pr-id="${pr.id}"
                 data-test-id="${test.id}"
-                title="${h(test.failureReason || test.resultSummary || "编辑测试项")}"
+                id="${h(focusId("test", test.id))}"
+                title="${h(test.status === "测试成功" ? "点击改回未测试" : "点击标记测试成功")}"
               >
-                ${h(test.name || test.testType)} · ${h(test.status)}${test.isRequired ? "" : " · 非必需"}
+                <span aria-hidden="true">${test.status === "测试成功" ? "✓" : "□"}</span>
+                ${h(test.name || test.testType)}${test.status === "测试失败" ? " · 失败" : ""}${test.status === "不适用" ? " · 不适用" : ""}${test.isRequired ? "" : " · 非必需"}
               </button>
             `,
           )
@@ -674,7 +679,7 @@
             ${gates
               .map(
                 (gate) => `
-                  <tr>
+                  <tr id="${h(focusId("gate", gate.id))}">
                     <td>${h(gate.name || "门禁")}${gate.isCurrent ? ` <span class="tag">当前</span>` : ""}</td>
                     <td>${renderGatePill(gate.status)}</td>
                     <td>${gate.failureReason ? h(gate.failureReason) : h(formatDateTime(gate.completedAt || gate.triggeredAt))}</td>
@@ -780,11 +785,18 @@
     dispatchAction(button);
   }
 
+  function handleOutsideDetailClick(event) {
+    if (!state.ui.detailOpen || dom.modalHost.contains(event.target) || dom.detailPanel.contains(event.target)) return;
+    const actionEl = event.target.closest("[data-action]");
+    if (actionEl && ["select-req", "todo-jump"].includes(actionEl.dataset.action)) return;
+    closeDetail();
+  }
+
   function dispatchAction(el) {
     const action = el.dataset.action;
     if (action === "close-detail") return closeDetail();
     const req = findRequirement(el.dataset.id);
-    if (action === "select-req") return selectRequirement(el.dataset.id);
+    if (action === "select-req" || action === "todo-jump") return selectRequirement(el.dataset.id, el.dataset.focusTarget || "");
     if (action === "open-url") return openUrl(el.dataset.url);
     if (!req && action !== "select-req") return;
 
@@ -813,8 +825,11 @@
       "unmerge-pr": () => unmergePr(req, branch, pr),
       "add-test": () => openTestForm(req, branch, pr),
       "edit-test": () => openTestForm(req, branch, pr, test),
+      "toggle-test-success": () => toggleTestSuccess(req, branch, pr, test),
+      "complete-pr-tests": () => completePrTests(req, branch, pr),
       "add-gate": () => openGateForm(req, branch),
       "edit-gate": () => openGateForm(req, branch, gate),
+      "export-branch-pr-links": () => exportBranchPrLinks(req, branch),
       "add-issue": () => openIssueForm(req),
       "edit-issue": () => openIssueForm(req, issue),
       "add-log": () => openLogForm(req),
@@ -822,17 +837,37 @@
     handlers[action]?.();
   }
 
-  function selectRequirement(id) {
+  function selectRequirement(id, focusTarget = "") {
     state.ui.selectedId = id;
     state.ui.detailOpen = true;
+    state.ui.focusTarget = focusTarget;
     render();
     persistSoon();
   }
 
   function closeDetail() {
     state.ui.detailOpen = false;
+    state.ui.focusTarget = "";
     render();
     persistSoon();
+  }
+
+  function focusId(kind, id) {
+    return `focus-${kind}-${id}`;
+  }
+
+  function focusPendingDetailTarget() {
+    const targetId = state.ui.focusTarget;
+    if (!targetId) return;
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("focus-flash");
+      window.setTimeout(() => target.classList.remove("focus-flash"), 1400);
+      state.ui.focusTarget = "";
+      persistSoon();
+    });
   }
 
   function openRequirementForm(req = null) {
@@ -1599,6 +1634,56 @@
     return true;
   }
 
+  function toggleTestSuccess(req, branch, pr, test) {
+    if (!test) return;
+    const oldStatus = test.status || "";
+    if (test.status === "测试成功") {
+      test.status = "未测试";
+      test.startedAt = "";
+      test.completedAt = "";
+      test.resultSummary = "";
+    } else {
+      markTestSuccess(test, oldStatus);
+    }
+    test.failureReason = "";
+    test.solution = "";
+    test.updatedAt = nowIso();
+    recordTestExecution(test, oldStatus);
+    recalcBranchStatus(branch);
+    touchRequirement(req);
+    commit();
+    toast(test.status === "测试成功" ? "测试已标记成功。" : "测试已改回未测试。");
+  }
+
+  function completePrTests(req, branch, pr) {
+    if (!pr) return;
+    if (!Array.isArray(pr.tests) || !pr.tests.length) pr.tests = createDefaultTests();
+    let changed = 0;
+    pr.tests.forEach((test) => {
+      if (test.status === "测试成功") return;
+      const oldStatus = test.status || "";
+      markTestSuccess(test, oldStatus);
+      recordTestExecution(test, oldStatus);
+      changed += 1;
+    });
+    if (!changed) return toast("该PR测试已全部成功。");
+    addSystemLog(req, "测试完成", `${pr.title || pr.prNo || "PR"} 的测试已全部标记成功。`, pr.prUrl);
+    recalcBranchStatus(branch);
+    touchRequirement(req);
+    commit();
+    toast("该PR全部测试已标记成功。");
+  }
+
+  function markTestSuccess(test, oldStatus = "") {
+    test.status = "测试成功";
+    test.startedAt = test.startedAt || nowIso();
+    test.completedAt = oldStatus === "测试成功" && test.completedAt ? test.completedAt : nowIso();
+    test.failureReason = "";
+    test.solution = "";
+    test.resultSummary = test.resultSummary || "验证通过。";
+    test.updatedAt = nowIso();
+  }
+
   function recalcBranchStatus(branch) {
     const counts = computeBranchCounts(branch);
     const gates = branch.gates || [];
@@ -1712,33 +1797,57 @@
       .forEach((req) => {
         const primary = getPrimaryAction(req);
         if (!primary) {
-          items.push({ reqId: req.id, title: `${req.title}`, meta: "缺少当前下一步动作", weight: 5 });
+          items.push({ reqId: req.id, title: `${req.title}`, meta: "缺少当前下一步动作", weight: 5, due: "9999-12-31", focusTarget: focusId("section", "actions") });
         } else {
+          const actionItem = { reqId: req.id, title: primary.content, due: primary.plannedEndAt || "9999-12-31", focusTarget: focusId("action", primary.id) };
           if (isPastDate(primary.plannedEndAt)) {
-            items.push({ reqId: req.id, title: primary.content, meta: `${req.title} · 动作已逾期`, weight: 1 });
+            items.push({ ...actionItem, meta: `${req.title} · 动作已逾期`, weight: 1 });
           } else if (primary.plannedEndAt === todayDate()) {
-            items.push({ reqId: req.id, title: primary.content, meta: `${req.title} · 今日到期`, weight: 2 });
+            items.push({ ...actionItem, meta: `${req.title} · 今日到期`, weight: 2 });
           } else if (primary.isBlocked) {
-            items.push({ reqId: req.id, title: primary.content, meta: `${req.title} · 动作阻塞`, weight: 1 });
+            items.push({ ...actionItem, meta: `${req.title} · 动作阻塞`, weight: 1 });
           }
         }
         (req.branches || []).forEach((branch) => {
           (branch.prs || []).forEach((pr) => {
-            if ((pr.tests || []).some((test) => test.status === "测试失败")) {
-              items.push({ reqId: req.id, title: pr.title || pr.prNo || "PR测试失败", meta: `${req.title} · 测试失败待处理`, weight: 1 });
-            }
+            (pr.tests || [])
+              .filter((test) => test.status === "测试失败")
+              .forEach((test) => {
+                items.push({
+                  reqId: req.id,
+                  title: test.name || test.testType || pr.title || "测试失败",
+                  meta: `${req.title} · ${branch.name || "分支"} · ${pr.title || pr.prNo || "PR"}`,
+                  weight: 1,
+                  due: req.plannedEndAt || "9999-12-31",
+                  focusTarget: focusId("test", test.id),
+                });
+              });
             if (pr.isRequired && !pr.isMerged && ["已批准", "待合入"].includes(pr.status)) {
-              items.push({ reqId: req.id, title: pr.title || pr.prNo || "PR待合入", meta: `${req.title} · 待合入PR`, weight: 3 });
+              items.push({
+                reqId: req.id,
+                title: pr.title || pr.prNo || "PR待合入",
+                meta: `${req.title} · ${branch.name || "分支"} · 待合入PR`,
+                weight: 3,
+                due: req.plannedEndAt || "9999-12-31",
+                focusTarget: focusId("pr", pr.id),
+              });
             }
           });
           (branch.gates || []).forEach((gate) => {
             if (gate.status === "失败") {
-              items.push({ reqId: req.id, title: gate.name || "门禁失败", meta: `${req.title} · 门禁失败待处理`, weight: 1 });
+              items.push({
+                reqId: req.id,
+                title: gate.name || "门禁失败",
+                meta: `${req.title} · ${branch.name || "分支"} · 门禁失败待处理`,
+                weight: 1,
+                due: req.plannedEndAt || "9999-12-31",
+                focusTarget: focusId("gate", gate.id),
+              });
             }
           });
         });
       });
-    return items.sort((a, b) => a.weight - b.weight);
+    return items.sort((a, b) => a.weight - b.weight || (a.due || "9999-12-31").localeCompare(b.due || "9999-12-31") || a.title.localeCompare(b.title));
   }
 
   function computeCounts(req) {
@@ -2334,6 +2443,15 @@
     return items.length ? items.join("\n") : "- 暂无";
   }
 
+  function exportBranchPrLinks(req, branch) {
+    if (!branch) return;
+    const links = (branch.prs || []).map((pr) => pr.prUrl).filter(Boolean);
+    if (!links.length) return toast("该分支没有可导出的PR链接。");
+    const filename = `pr-links-${safeFilename(req.title || "requirement")}-${safeFilename(branch.name || "branch")}-${todayDate()}.txt`;
+    downloadText(filename, `${links.join("\n")}\n`, "text/plain;charset=utf-8");
+    toast("PR链接已导出。");
+  }
+
   function exportJson(suffix = "backup") {
     const snapshot = deepClone(state);
     downloadText(`rd-tracker-${suffix}-${todayDate()}.json`, JSON.stringify(snapshot, null, 2), "application/json;charset=utf-8");
@@ -2515,6 +2633,7 @@
       leftCollapsed: false,
       detailOpen: false,
       selectedId: null,
+      focusTarget: "",
       ...(next.ui || {}),
     };
     next.requirements = Array.isArray(next.requirements) ? next.requirements : [];
@@ -2608,6 +2727,7 @@
         leftCollapsed: false,
         detailOpen: false,
         selectedId: null,
+        focusTarget: "",
       },
       requirements: [],
     };
@@ -2958,6 +3078,14 @@
     if (!value) return "";
     if (/^(https?:|mailto:|file:)/i.test(value)) return value;
     return `https://${value}`;
+  }
+
+  function safeFilename(value) {
+    return String(value || "export")
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .slice(0, 48) || "export";
   }
 
   function testStatusClass(status) {

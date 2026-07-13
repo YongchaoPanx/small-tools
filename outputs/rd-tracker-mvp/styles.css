@@ -808,6 +808,11 @@ a:hover {
   overflow: hidden;
 }
 
+.focus-flash {
+  scroll-margin-top: 96px;
+  animation: focus-flash 1400ms ease;
+}
+
 .entity-card-head {
   display: flex;
   align-items: flex-start;
@@ -857,7 +862,13 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 24px;
+  padding: 2px 8px;
   border-color: transparent;
+}
+
+.test-chip span {
+  font-family: "Cascadia Mono", Consolas, monospace;
 }
 
 .timeline {
@@ -1125,5 +1136,19 @@ a:hover {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@keyframes focus-flash {
+  0% {
+    outline: 2px solid rgba(15, 118, 110, 0.55);
+    box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.16);
+    background-color: var(--primary-soft);
+  }
+
+  100% {
+    outline: 0 solid transparent;
+    box-shadow: none;
+    background-color: inherit;
   }
 }
