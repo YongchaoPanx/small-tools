@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>研发需求推进管理工具 MVP</title>
+    <meta
+      name="description"
+      content="本地优先的个人研发需求、分支、PR、测试、门禁和问题单推进管理工具。"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">R</div>
+          <div>
+            <h1>研发需求推进管理</h1>
+            <p>本地优先 · 需求 / 分支 / PR / 测试 / 门禁 / 问题单</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <label class="search-box" aria-label="全局搜索">
+            <span aria-hidden="true">⌕</span>
+            <input id="globalSearch" type="search" placeholder="搜索需求、PR、问题单、失败原因或URL" />
+          </label>
+          <button id="toggleLeftRailBtn" type="button" title="收起或展开左侧概览">收起侧栏</button>
+          <div class="segmented" aria-label="视图切换">
+            <button id="listViewBtn" type="button" class="active">列表</button>
+            <button id="boardViewBtn" type="button">看板</button>
+          </div>
+          <button id="newRequirementBtn" type="button" class="primary-btn">新增需求</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="left-rail" aria-label="概览和筛选">
+          <section class="panel">
+            <div class="section-title">
+              <h2>今日焦点</h2>
+              <button id="weeklyReportBtn" type="button" class="text-btn">周报</button>
+            </div>
+            <div id="statsGrid" class="stats-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-title">
+              <h2>待处理</h2>
+              <span id="todoCount" class="count-pill">0</span>
+            </div>
+            <div id="todoList" class="todo-list empty-state">暂无待处理项</div>
+          </section>
+
+          <section class="panel">
+            <div class="section-title">
+              <h2>筛选</h2>
+              <button id="clearFiltersBtn" type="button" class="text-btn">清除</button>
+            </div>
+            <div class="filter-grid">
+              <label>
+                状态
+                <select id="statusFilter"></select>
+              </label>
+              <label>
+                优先级
+                <select id="priorityFilter"></select>
+              </label>
+              <label>
+                风险
+                <select id="riskFilter"></select>
+              </label>
+              <label>
+                排序
+                <select id="sortMode">
+                  <option value="risk">风险优先</option>
+                  <option value="priority">优先级</option>
+                  <option value="plannedEndAt">计划完成时间</option>
+                  <option value="updatedAt">最近更新</option>
+                  <option value="createdAt">创建时间</option>
+                  <option value="progress">交付链路进度</option>
+                </select>
+              </label>
+              <label class="checkbox-row">
+                <input id="showArchived" type="checkbox" />
+                显示已归档
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-title">
+              <h2>本地数据</h2>
+            </div>
+            <div class="data-actions">
+              <button id="exportJsonBtn" type="button">导出JSON</button>
+              <button id="importJsonBtn" type="button">导入JSON</button>
+              <button id="exportCsvBtn" type="button">导出CSV</button>
+              <button id="resetDemoBtn" type="button" class="danger-ghost">清空数据</button>
+              <input id="importFile" type="file" accept="application/json,.json" hidden />
+            </div>
+            <p class="hint">数据保存在当前浏览器的 IndexedDB 中。导入前会先下载当前数据备份。</p>
+          </section>
+        </aside>
+
+        <section class="main-panel" aria-label="需求列表">
+          <div class="list-header">
+            <div>
+              <h2 id="mainTitle">需求列表</h2>
+              <p id="resultSummary">正在加载本地数据…</p>
+            </div>
+            <div class="header-tools">
+              <button id="quickAddFromClipboardBtn" type="button">从剪贴板添加链接</button>
+              <button id="collapseAllBtn" type="button">收起详情</button>
+            </div>
+          </div>
+          <div id="contentArea" class="content-area"></div>
+        </section>
+
+        <aside id="detailPanel" class="detail-panel" aria-label="需求详情"></aside>
+      </main>
+    </div>
+
+    <div id="modalHost" class="modal-host" hidden></div>
+    <div id="toastHost" class="toast-host" aria-live="polite"></div>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>

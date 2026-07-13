@@ -1,0 +1,7 @@
+work/
+
+outputs/rd-tracker-windows-app-package/
+outputs/rd-tracker-windows-app/logs/
+outputs/rd-tracker-windows-app/profile/
+
+*.log
