@@ -230,6 +230,10 @@ a:hover {
   border-color: #f3b7b7;
 }
 
+.danger-text {
+  color: var(--red);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 260px minmax(640px, 1fr);
@@ -884,9 +888,15 @@ a:hover {
   background: var(--surface-soft);
 }
 
-.timeline-item time {
-  display: block;
+.timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 5px;
+}
+
+.timeline-head time {
   color: var(--muted);
   font-size: 12px;
 }

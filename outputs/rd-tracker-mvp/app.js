@@ -747,7 +747,10 @@
           .map(
             (log) => `
               <div class="timeline-item">
-                <time>${h(formatDateTime(log.completedAt || log.createdAt))} · ${h(log.logType || "其他")}</time>
+                <div class="timeline-head">
+                  <time>${h(formatDateTime(log.completedAt || log.createdAt))} · ${h(log.logType || "其他")}</time>
+                  <button type="button" class="text-btn danger-text" data-action="delete-log" data-id="${req.id}" data-log-id="${log.id}">删除</button>
+                </div>
                 <div>${h(log.content)}</div>
                 ${log.relatedUrl ? `<a href="${h(safeHref(log.relatedUrl))}" target="_blank" rel="noreferrer">相关链接</a>` : ""}
               </div>
@@ -806,6 +809,7 @@
     const gate = branch ? findGate(branch, el.dataset.gateId) : null;
     const issue = req ? findIssue(req, el.dataset.issueId) : null;
     const actionItem = req ? findAction(req, el.dataset.actionId) : null;
+    const log = req ? findLog(req, el.dataset.logId) : null;
 
     const handlers = {
       "edit-req": () => openRequirementForm(req),
@@ -833,6 +837,7 @@
       "add-issue": () => openIssueForm(req),
       "edit-issue": () => openIssueForm(req, issue),
       "add-log": () => openLogForm(req),
+      "delete-log": () => deleteLog(req, log),
     };
     handlers[action]?.();
   }
@@ -1043,6 +1048,12 @@
         toast("动作已保存。");
         return true;
       },
+      dangerAction: action
+        ? {
+            label: "删除动作",
+            onClick: () => deleteAction(req, action),
+          }
+        : null,
     });
   }
 
@@ -1098,6 +1109,12 @@
         toast("分支已保存。");
         return true;
       },
+      dangerAction: branch
+        ? {
+            label: "删除分支",
+            onClick: () => deleteBranch(req, branch),
+          }
+        : null,
     });
   }
 
@@ -1169,6 +1186,12 @@
         toast("PR已保存。");
         return true;
       },
+      dangerAction: pr
+        ? {
+            label: "删除PR",
+            onClick: () => deletePr(req, branch, pr),
+          }
+        : null,
     });
   }
 
@@ -1329,6 +1352,12 @@
         toast("门禁记录已保存。");
         return true;
       },
+      dangerAction: gate
+        ? {
+            label: "删除门禁",
+            onClick: () => deleteGate(req, branch, gate),
+          }
+        : null,
     });
   }
 
@@ -1385,6 +1414,12 @@
         toast("问题单已保存。");
         return true;
       },
+      dangerAction: issue
+        ? {
+            label: "删除问题单",
+            onClick: () => deleteIssue(req, issue),
+          }
+        : null,
     });
   }
 
@@ -1574,6 +1609,72 @@
     if (!state.ui.selectedId) state.ui.detailOpen = false;
     commit();
     toast("需求已删除。");
+  }
+
+  function deleteAction(req, action) {
+    if (!action) return false;
+    if (!window.confirm(`确认删除动作「${action.content || "未命名动作"}」？`)) return false;
+    req.actions = (req.actions || []).filter((item) => item.id !== action.id);
+    touchRequirement(req);
+    commit();
+    toast("动作已删除。");
+    return true;
+  }
+
+  function deleteBranch(req, branch) {
+    if (!branch) return false;
+    const prCount = (branch.prs || []).length;
+    const gateCount = (branch.gates || []).length;
+    const suffix = prCount || gateCount ? `，同时删除 ${prCount} 个PR和 ${gateCount} 条门禁记录` : "";
+    if (!window.confirm(`确认删除分支「${branch.name || "未命名分支"}」${suffix}？`)) return false;
+    req.branches = (req.branches || []).filter((item) => item.id !== branch.id);
+    touchRequirement(req);
+    commit();
+    toast("分支已删除。");
+    return true;
+  }
+
+  function deletePr(req, branch, pr) {
+    if (!branch || !pr) return false;
+    const testCount = (pr.tests || []).length;
+    const suffix = testCount ? `，同时删除 ${testCount} 个测试项` : "";
+    if (!window.confirm(`确认删除PR「${pr.title || pr.prNo || "未命名PR"}」${suffix}？`)) return false;
+    branch.prs = (branch.prs || []).filter((item) => item.id !== pr.id);
+    recalcBranchStatus(branch);
+    touchRequirement(req);
+    commit();
+    toast("PR已删除。");
+    return true;
+  }
+
+  function deleteGate(req, branch, gate) {
+    if (!branch || !gate) return false;
+    if (!window.confirm(`确认删除门禁「${gate.name || "未命名门禁"}」？`)) return false;
+    branch.gates = (branch.gates || []).filter((item) => item.id !== gate.id);
+    recalcBranchStatus(branch);
+    touchRequirement(req);
+    commit();
+    toast("门禁已删除。");
+    return true;
+  }
+
+  function deleteIssue(req, issue) {
+    if (!issue) return false;
+    if (!window.confirm(`确认删除问题单「${issue.title || issue.issueNo || "未命名问题单"}」？`)) return false;
+    req.issues = (req.issues || []).filter((item) => item.id !== issue.id);
+    touchRequirement(req);
+    commit();
+    toast("问题单已删除。");
+    return true;
+  }
+
+  function deleteLog(req, log) {
+    if (!log) return;
+    if (!window.confirm("确认删除这条完成记录？")) return;
+    req.logs = (req.logs || []).filter((item) => item.id !== log.id);
+    touchRequirement(req);
+    commit();
+    toast("完成记录已删除。");
   }
 
   function duplicateRequirement(req) {
@@ -2142,6 +2243,10 @@
 
   function findIssue(req, id) {
     return (req.issues || []).find((item) => item.id === id);
+  }
+
+  function findLog(req, id) {
+    return (req.logs || []).find((item) => item.id === id);
   }
 
   function fillSelect(select, options, labeler = (value) => value) {
