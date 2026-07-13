@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>研发需求推进管理工具 MVP</title>
+    <title>研发事项推进管理工具 MVP</title>
     <meta
       name="description"
-      content="本地优先的个人研发需求、分支、PR、测试、门禁和问题单推进管理工具。"
+      content="本地优先的个人研发事项、问题单、任务、分支、PR、测试和门禁推进管理工具。"
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -16,21 +16,21 @@
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">R</div>
           <div>
-            <h1>研发需求推进管理</h1>
-            <p>本地优先 · 需求 / 分支 / PR / 测试 / 门禁 / 问题单</p>
+            <h1>研发事项推进管理</h1>
+            <p>本地优先 · 事项 / 问题单 / 任务 / 分支 / PR / 测试 / 门禁</p>
           </div>
         </div>
         <div class="top-actions">
           <label class="search-box" aria-label="全局搜索">
             <span aria-hidden="true">⌕</span>
-            <input id="globalSearch" type="search" placeholder="搜索需求、PR、问题单、失败原因或URL" />
+            <input id="globalSearch" type="search" placeholder="搜索事项、任务、PR、问题单、失败原因或URL" />
           </label>
           <button id="toggleLeftRailBtn" type="button" title="收起或展开左侧概览">收起侧栏</button>
           <div class="segmented" aria-label="视图切换">
             <button id="listViewBtn" type="button" class="active">列表</button>
             <button id="boardViewBtn" type="button">看板</button>
           </div>
-          <button id="newRequirementBtn" type="button" class="primary-btn">新增需求</button>
+          <button id="newRequirementBtn" type="button" class="primary-btn">新增事项</button>
         </div>
       </header>
 
@@ -103,10 +103,10 @@
           </section>
         </aside>
 
-        <section class="main-panel" aria-label="需求列表">
+        <section class="main-panel" aria-label="事项列表">
           <div class="list-header">
             <div>
-              <h2 id="mainTitle">需求列表</h2>
+              <h2 id="mainTitle">事项列表</h2>
               <p id="resultSummary">正在加载本地数据…</p>
             </div>
             <div class="header-tools">
@@ -117,7 +117,7 @@
           <div id="contentArea" class="content-area"></div>
         </section>
 
-        <aside id="detailPanel" class="detail-panel" aria-label="需求详情"></aside>
+        <aside id="detailPanel" class="detail-panel" aria-label="事项详情"></aside>
       </main>
     </div>
 

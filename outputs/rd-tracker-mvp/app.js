@@ -42,8 +42,8 @@
   const TEST_TYPES = ["单元测试", "XTS", "自验证", "稳定性测试", "编译验证", "功能测试", "冒烟测试", "回归测试", "其他"];
   const GATE_STATUSES = ["未触发", "运行中", "通过", "失败", "已取消", "不适用"];
   const ISSUE_STATUSES = ["无需走单", "待创建", "已创建", "处理中", "待验证", "已解决", "已关闭", "已取消"];
-  const ISSUE_TYPES = ["需求单", "缺陷单", "测试问题", "门禁问题", "变更单", "其他"];
-  const LOG_TYPES = ["代码开发", "问题修复", "PR创建", "PR更新", "测试完成", "门禁通过", "PR合入", "文档完成", "需求确认", "其他"];
+  const ISSUE_TYPES = ["事项单", "缺陷单", "测试问题", "门禁问题", "变更单", "其他"];
+  const LOG_TYPES = ["代码开发", "问题修复", "PR创建", "PR更新", "测试完成", "门禁通过", "PR合入", "文档完成", "事项确认", "其他"];
 
   const STAGE_PROGRESS = {
     待分析: 5,
@@ -225,8 +225,8 @@
   function renderStats() {
     const stats = computeStats();
     const items = [
-      ["进行中需求", stats.activeRequirements],
-      ["阻塞需求", stats.blockedRequirements],
+      ["进行中事项", stats.activeRequirements],
+      ["阻塞事项", stats.blockedRequirements],
       ["待处理动作", stats.pendingActions],
       ["逾期动作", stats.overdueActions],
       ["测试失败PR", stats.failedPrs],
@@ -262,10 +262,10 @@
 
   function renderMain() {
     const reqs = getFilteredRequirements();
-    dom.mainTitle.textContent = state.ui.view === "board" ? "需求看板" : "需求列表";
-    dom.resultSummary.textContent = `共 ${reqs.length} 条需求，未归档 ${state.requirements.filter((req) => !req.isArchived).length} 条，本地自动保存`;
+    dom.mainTitle.textContent = state.ui.view === "board" ? "事项看板" : "事项列表";
+    dom.resultSummary.textContent = `共 ${reqs.length} 条事项，未归档 ${state.requirements.filter((req) => !req.isArchived).length} 条，本地自动保存`;
     if (!reqs.length) {
-      dom.contentArea.innerHTML = `<div class="empty-state">没有匹配的需求。可以调整筛选条件，或新增一个需求。</div>`;
+      dom.contentArea.innerHTML = `<div class="empty-state">没有匹配的事项。可以调整筛选条件，或新增一个事项。</div>`;
       return;
     }
     dom.contentArea.innerHTML = state.ui.view === "board" ? renderBoard(reqs) : renderList(reqs);
@@ -297,7 +297,7 @@
           ${req.plannedEndAt ? `<span class="tag">计划 ${h(formatDate(req.plannedEndAt))}</span>` : `<span class="tag">未设计划</span>`}
           ${req.isArchived ? `<span class="tag">已归档</span>` : ""}
         </div>
-        <select class="inline-select" data-no-row data-inline-status="${req.id}" aria-label="修改需求状态">
+        <select class="inline-select" data-no-row data-inline-status="${req.id}" aria-label="修改事项状态">
           ${REQUIREMENT_STATUSES.map((status) => `<option value="${h(status)}" ${status === req.status ? "selected" : ""}>${h(status)}</option>`).join("")}
         </select>
         <div class="req-list-action">
@@ -476,19 +476,11 @@
       </section>
 
       <section class="detail-section">
-        <div class="section-title">
-          <h3>完成时间线</h3>
-          <button type="button" data-action="add-log" data-id="${req.id}">新增记录</button>
-        </div>
-        ${renderLogs(req)}
-      </section>
-
-      <section class="detail-section">
         <div class="compact-actions">
           <button type="button" data-action="${req.isArchived ? "restore-req" : "archive-req"}" data-id="${req.id}">
-            ${req.isArchived ? "恢复需求" : "归档需求"}
+            ${req.isArchived ? "恢复事项" : "归档事项"}
           </button>
-          <button type="button" class="danger-ghost" data-action="delete-req" data-id="${req.id}">删除需求</button>
+          <button type="button" class="danger-ghost" data-action="delete-req" data-id="${req.id}">删除事项</button>
         </div>
       </section>
     `;
@@ -496,7 +488,7 @@
   }
 
   function renderActions(req) {
-    if (!req.actions?.length) return `<div class="empty-state">暂无动作。进行中的需求建议保留一个当前主要动作。</div>`;
+    if (!req.actions?.length) return `<div class="empty-state">暂无动作。进行中的事项建议保留一个当前主要动作。</div>`;
     return `
       <div class="entity-list">
         ${req.actions
@@ -545,7 +537,7 @@
   }
 
   function renderBranches(req) {
-    if (!req.branches?.length) return `<div class="empty-state">暂无分支。新增需求时会默认生成三个分支位置，也可以按实际情况调整。</div>`;
+    if (!req.branches?.length) return `<div class="empty-state">暂无分支。新增事项时会默认生成三个分支位置，也可以按实际情况调整。</div>`;
     return `
       <div class="entity-list">
         ${req.branches
@@ -574,6 +566,7 @@
           </div>
           <div class="compact-actions">
             ${branch.repositoryUrl ? `<button type="button" data-action="open-url" data-url="${h(branch.repositoryUrl)}">仓库</button>` : ""}
+            <button type="button" data-action="open-branch-pr-gates" data-id="${req.id}" data-branch-id="${branch.id}">打开PR/门禁</button>
             <button type="button" data-action="export-branch-pr-links" data-id="${req.id}" data-branch-id="${branch.id}">导出PR链接</button>
             <button type="button" data-action="edit-branch" data-id="${req.id}" data-branch-id="${branch.id}">编辑</button>
             <button type="button" data-action="add-pr" data-id="${req.id}" data-branch-id="${branch.id}">新增PR</button>
@@ -835,6 +828,7 @@
       "complete-pr-tests": () => completePrTests(req, branch, pr),
       "add-gate": () => openGateForm(req, branch),
       "edit-gate": () => openGateForm(req, branch, gate),
+      "open-branch-pr-gates": () => openBranchPrAndGates(branch),
       "export-branch-pr-links": () => exportBranchPrLinks(req, branch),
       "add-issue": () => openIssueForm(req),
       "edit-issue": () => openIssueForm(req, issue),
@@ -905,14 +899,14 @@
         };
 
     openForm({
-      title: req ? "编辑需求" : "新增需求",
+      title: req ? "编辑事项" : "新增事项",
       fields: [
-        field("title", "需求名称", "text", { required: true, full: true }),
-        field("requirementNo", "需求编号"),
+        field("title", "事项名称", "text", { required: true, full: true }),
+        field("requirementNo", "事项编号"),
         field("projectName", "所属项目"),
         field("versionName", "所属版本"),
         field("iterationName", "迭代或周次"),
-        field("source", "需求来源"),
+        field("source", "事项来源"),
         field("priority", "优先级", "select", { options: PRIORITIES, labeler: (value) => PRIORITY_LABEL[value] }),
         field("status", "当前状态", "select", { options: REQUIREMENT_STATUSES }),
         field("progress", "手动进度(0-100)", "number"),
@@ -920,7 +914,7 @@
         field("plannedEndAt", "计划完成", "date"),
         field("tags", "标签，逗号分隔"),
         field("nextAction", "当前下一步动作", "textarea", { full: true }),
-        field("description", "需求说明", "textarea", { full: true }),
+        field("description", "事项说明", "textarea", { full: true }),
         field("acceptanceCriteria", "验收标准", "textarea", { full: true }),
         field("isBlocked", "标记为阻塞", "checkbox"),
         field("blockedReason", "阻塞原因", "textarea", { full: true }),
@@ -928,7 +922,7 @@
       values,
       onSubmit: (form) => {
         if (form.isBlocked && !form.blockedReason.trim()) {
-          toast("阻塞需求需要填写阻塞原因。");
+          toast("阻塞事项需要填写阻塞原因。");
           return false;
         }
         const now = nowIso();
@@ -938,8 +932,8 @@
           syncRequirementDerivedFields(req, oldStatus);
           upsertPrimaryActionFromRequirement(req, form.nextAction);
           touchRequirement(req);
-          addSystemLog(req, "需求确认", "更新需求信息。");
-          toast("需求已更新。");
+          addSystemLog(req, "事项确认", "更新事项信息。");
+          toast("事项已更新。");
         } else {
           const newReq = {
             id: uid("req"),
@@ -956,11 +950,11 @@
           };
           syncRequirementDerivedFields(newReq, "");
           upsertPrimaryActionFromRequirement(newReq, form.nextAction);
-          addSystemLog(newReq, "需求确认", "创建需求。");
+          addSystemLog(newReq, "事项确认", "创建事项。");
           state.requirements.unshift(newReq);
           state.ui.selectedId = newReq.id;
           state.ui.detailOpen = true;
-          toast("需求已创建。");
+          toast("事项已创建。");
         }
         commit();
         return true;
@@ -1368,7 +1362,7 @@
       title: "",
       issueNo: "",
       issueUrl: "",
-      issueType: "需求单",
+      issueType: "事项单",
       status: "待创建",
       isBlocking: false,
       plannedCloseAt: "",
@@ -1384,7 +1378,7 @@
         field("issueType", "问题类型", "select", { options: ISSUE_TYPES }),
         field("status", "问题单状态", "select", { options: ISSUE_STATUSES }),
         field("issueUrl", "问题单链接", "url", { full: true }),
-        field("isBlocking", "阻塞需求", "checkbox"),
+        field("isBlocking", "阻塞事项", "checkbox"),
         field("plannedCloseAt", "计划关闭", "date"),
         field("closedAt", "实际关闭", "date"),
         field("resolution", "处理结论", "textarea", { full: true }),
@@ -1576,21 +1570,21 @@
     req.status = nextStatus;
     if (nextStatus === "已完成" && old !== "已完成") {
       req.completedAt = nowIso();
-      addSystemLog(req, "需求确认", "需求标记为已完成。");
+      addSystemLog(req, "事项确认", "事项标记为已完成。");
     }
     if (old === "已完成" && nextStatus !== "已完成") {
       req.completedAt = "";
     }
     touchRequirement(req);
     commit();
-    toast("需求状态已更新。");
+    toast("事项状态已更新。");
   }
 
   function completeRequirement(req) {
     const ready = canCompleteRequirement(req);
     const message = ready
-      ? "该需求满足建议完成条件，确认标记为已完成？"
-      : "该需求仍存在未完成项，仍要手动标记为已完成吗？";
+      ? "该事项满足建议完成条件，确认标记为已完成？"
+      : "该事项仍存在未完成项，仍要手动标记为已完成吗？";
     if (!window.confirm(message)) return;
     updateRequirementStatus(req, "已完成");
   }
@@ -1600,17 +1594,17 @@
     req.archivedAt = archived ? nowIso() : "";
     touchRequirement(req);
     commit();
-    toast(archived ? "需求已归档。" : "需求已恢复。");
+    toast(archived ? "事项已归档。" : "事项已恢复。");
   }
 
   function deleteRequirement(req) {
-    if (!window.confirm(`确认删除需求「${req.title}」？此操作不可恢复。`)) return;
+    if (!window.confirm(`确认删除事项「${req.title}」？此操作不可恢复。`)) return;
     if (!window.confirm("请再次确认删除。建议先导出备份。")) return;
     state.requirements = state.requirements.filter((item) => item.id !== req.id);
     if (state.ui.selectedId === req.id) state.ui.selectedId = state.requirements[0]?.id || null;
     if (!state.ui.selectedId) state.ui.detailOpen = false;
     commit();
-    toast("需求已删除。");
+    toast("事项已删除。");
   }
 
   function deleteAction(req, action) {
@@ -1690,12 +1684,12 @@
     copy.archivedAt = "";
     copy.createdAt = now;
     copy.updatedAt = now;
-    addSystemLog(copy, "需求确认", "复制需求。");
+    addSystemLog(copy, "事项确认", "复制事项。");
     state.requirements.unshift(copy);
     state.ui.selectedId = copy.id;
     state.ui.detailOpen = true;
     commit();
-    toast("需求已复制。");
+    toast("事项已复制。");
   }
 
   function mergePr(req, branch, pr) {
@@ -2006,10 +2000,10 @@
 
   function computeRequirementDelivery(req) {
     if (req.status === "已完成") {
-      return { percent: 100, label: "需求已完成", blocker: "已完成" };
+      return { percent: 100, label: "事项已完成", blocker: "已完成" };
     }
     if (req.status === "已取消") {
-      return { percent: 0, label: "需求已取消", blocker: "已取消" };
+      return { percent: 0, label: "事项已取消", blocker: "已取消" };
     }
 
     const branches = (req.branches || []).filter((branch) => branch.isRequired);
@@ -2024,7 +2018,7 @@
     const blocker =
       firstBlockedIndex >= 0
         ? `${branches[firstBlockedIndex].name || "分支"}：${deliveries[firstBlockedIndex].blocker}`
-        : "可标记需求完成";
+        : "可标记事项完成";
 
     return {
       percent,
@@ -2162,11 +2156,12 @@
     const query = (state.ui.query || "").toLowerCase();
     return state.requirements
       .filter((req) => {
-        if (!state.ui.showArchived && req.isArchived) return false;
+        const matchesQuery = !query || searchHaystack(req).includes(query);
+        if (!matchesQuery) return false;
+        if (!state.ui.showArchived && req.isArchived && !query) return false;
         if (state.ui.status !== "全部" && req.status !== state.ui.status) return false;
         if (state.ui.priority !== "全部" && req.priority !== state.ui.priority) return false;
         if (state.ui.risk !== "全部" && computeRisk(req).key !== state.ui.risk) return false;
-        if (query && !searchHaystack(req).includes(query)) return false;
         return true;
       })
       .sort(sortRequirements);
@@ -2267,7 +2262,7 @@
       if (!url) return toast("剪贴板中没有识别到URL。");
       if (!state.requirements.length) {
         openRequirementForm();
-        toast("请先创建需求，再从剪贴板添加链接。");
+        toast("请先创建事项，再从剪贴板添加链接。");
         return;
       }
       openClipboardLinkForm(url);
@@ -2296,7 +2291,7 @@
               </select>
             </label>
             <label>
-              所属需求
+              所属事项
               <select name="requirementId">
                 ${state.requirements
                   .map((req) => `<option value="${h(req.id)}" ${req.id === defaultReq.id ? "selected" : ""}>${h(req.title)}</option>`)
@@ -2322,7 +2317,7 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="hint">不会自动猜归属，请确认需求和分支后再保存。</span>
+          <span class="hint">不会自动猜归属，请确认事项和分支后再保存。</span>
           <div class="compact-actions">
             <button type="button" data-modal-close>取消</button>
             <button type="submit" class="primary-btn">添加</button>
@@ -2342,7 +2337,7 @@
       const branches = req?.branches || [];
       branchSelect.innerHTML = branches.length
         ? branches.map((branch) => `<option value="${h(branch.id)}">${h(branch.name || "未命名分支")}</option>`).join("")
-        : `<option value="">该需求暂无分支</option>`;
+        : `<option value="">该事项暂无分支</option>`;
       branchSelect.disabled = !branches.length;
     };
     const updateTypeState = () => {
@@ -2367,7 +2362,7 @@
       const title = form.elements.title.value.trim() || defaultTitle;
       const number = form.elements.number.value.trim();
       const link = form.elements.url.value.trim();
-      if (!req) return toast("请选择需求。");
+      if (!req) return toast("请选择事项。");
       if (!link) return toast("链接不能为空。");
       if (type !== "问题单" && !findBranch(req, branchSelect.value)) {
         return toast("PR和门禁必须选择所属分支。");
@@ -2535,7 +2530,7 @@
       `# 研发周报 ${formatDate(weekStart.toISOString())} - ${formatDate(todayDate())}`,
       "",
       "## 本周完成",
-      listOrNone([...completed.map((item) => `- 完成需求：${item}`), ...mergedPrs.map((item) => `- 合入PR：${item}`), ...passedTests.map((item) => `- 通过测试：${item}`), ...solvedIssues.map((item) => `- 解决问题单：${item}`), ...logs]),
+      listOrNone([...completed.map((item) => `- 完成事项：${item}`), ...mergedPrs.map((item) => `- 合入PR：${item}`), ...passedTests.map((item) => `- 通过测试：${item}`), ...solvedIssues.map((item) => `- 解决问题单：${item}`), ...logs]),
       "",
       "## 当前进行中",
       listOrNone(running),
@@ -2552,10 +2547,28 @@
 
   async function exportBranchPrLinks(req, branch) {
     if (!branch) return;
-    const links = (branch.prs || []).map((pr) => pr.prUrl).filter(Boolean);
+    const links = uniqueLinks((branch.prs || []).map((pr) => pr.prUrl));
     if (!links.length) return toast("该分支没有可导出的PR链接。");
     const ok = await copyTextToClipboard(links.join("\n"));
     toast(ok ? "PR链接已复制到剪贴板。" : "复制失败，请检查浏览器剪贴板权限。");
+  }
+
+  function openBranchPrAndGates(branch) {
+    if (!branch) return;
+    const prLinks = uniqueLinks((branch.prs || []).map((pr) => pr.prUrl));
+    const gateLinks = uniqueLinks((branch.gates || []).map((gate) => gate.gateUrl));
+    const links = [...prLinks, ...gateLinks.filter((link) => !prLinks.includes(link))];
+    if (!links.length) return toast("该分支没有可打开的PR或门禁链接。");
+
+    links.forEach((link) => window.open(safeHref(link), "_blank", "noopener,noreferrer"));
+    const parts = [];
+    if (prLinks.length) parts.push(`${prLinks.length} 个PR`);
+    if (gateLinks.length) parts.push(`${gateLinks.length} 个门禁`);
+    toast(`已打开${parts.join("、")}链接。`);
+  }
+
+  function uniqueLinks(links) {
+    return [...new Set((links || []).map((link) => String(link || "").trim()).filter(Boolean))];
   }
 
   async function copyTextToClipboard(text) {
@@ -2592,7 +2605,7 @@
 
   function exportCsv() {
     const rows = [
-      ["需求名称", "需求编号", "项目", "版本", "优先级", "状态", "风险", "交付链路进度", "当前卡点", "计划完成", "下一步", "是否归档"],
+      ["事项名称", "事项编号", "项目", "版本", "优先级", "状态", "风险", "交付链路进度", "当前卡点", "计划完成", "下一步", "是否归档"],
       ...state.requirements.map((req) => {
         const delivery = computeRequirementDelivery(req);
         const primary = getPrimaryAction(req);
@@ -2613,7 +2626,7 @@
       }),
     ];
     const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
-    downloadText(`rd-tracker-requirements-${todayDate()}.csv`, `\ufeff${csv}`, "text/csv;charset=utf-8");
+    downloadText(`rd-tracker-work-items-${todayDate()}.csv`, `\ufeff${csv}`, "text/csv;charset=utf-8");
     toast("CSV已导出。");
   }
 
@@ -2870,7 +2883,7 @@
     return (
       titles.length === 2 &&
       titles.includes("帐号模块周版本缺陷修复") &&
-      titles.includes("音频服务稳定性需求适配")
+      titles.includes("音频服务稳定性事项适配")
     );
   }
 
@@ -2881,7 +2894,7 @@
     const now = nowIso();
     const req1 = {
       id: uid("req"),
-      title: "音频服务稳定性需求适配",
+      title: "音频服务稳定性事项适配",
       requirementNo: "REQ-2026-0713-01",
       projectName: "OpenHarmony子系统",
       versionName: "weekly-0720",
