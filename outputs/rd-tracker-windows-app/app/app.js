@@ -168,6 +168,7 @@
     dom.contentArea.addEventListener("click", handleContentClick);
     dom.contentArea.addEventListener("change", handleContentChange);
     dom.detailPanel.addEventListener("click", handleDetailClick);
+    dom.modalHost.addEventListener("click", (event) => event.stopPropagation());
     document.addEventListener("click", handleOutsideDetailClick);
   }
 
