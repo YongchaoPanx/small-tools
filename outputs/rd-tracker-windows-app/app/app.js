@@ -782,6 +782,7 @@
   }
 
   function handleDetailClick(event) {
+    event.stopPropagation();
     const button = event.target.closest("[data-action]");
     if (!button) return;
     event.preventDefault();
@@ -2548,13 +2549,38 @@
     return items.length ? items.join("\n") : "- 暂无";
   }
 
-  function exportBranchPrLinks(req, branch) {
+  async function exportBranchPrLinks(req, branch) {
     if (!branch) return;
     const links = (branch.prs || []).map((pr) => pr.prUrl).filter(Boolean);
     if (!links.length) return toast("该分支没有可导出的PR链接。");
-    const filename = `pr-links-${safeFilename(req.title || "requirement")}-${safeFilename(branch.name || "branch")}-${todayDate()}.txt`;
-    downloadText(filename, `${links.join("\n")}\n`, "text/plain;charset=utf-8");
-    toast("PR链接已导出。");
+    const ok = await copyTextToClipboard(links.join("\n"));
+    toast(ok ? "PR链接已复制到剪贴板。" : "复制失败，请检查浏览器剪贴板权限。");
+  }
+
+  async function copyTextToClipboard(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (error) {
+      // Fall through to the textarea copy path.
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch (error) {
+      copied = false;
+    }
+    textarea.remove();
+    return copied;
   }
 
   function exportJson(suffix = "backup") {
@@ -3183,14 +3209,6 @@
     if (!value) return "";
     if (/^(https?:|mailto:|file:)/i.test(value)) return value;
     return `https://${value}`;
-  }
-
-  function safeFilename(value) {
-    return String(value || "export")
-      .trim()
-      .replace(/[\\/:*?"<>|]+/g, "-")
-      .replace(/\s+/g, "-")
-      .slice(0, 48) || "export";
   }
 
   function testStatusClass(status) {

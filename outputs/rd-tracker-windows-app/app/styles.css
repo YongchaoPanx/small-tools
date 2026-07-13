@@ -291,8 +291,8 @@ a:hover {
   right: 14px;
   bottom: 14px;
   z-index: 35;
-  width: min(860px, calc(100vw - 420px));
-  min-width: 560px;
+  width: min(980px, calc(100vw - 360px));
+  min-width: 640px;
   padding: 0;
   overflow: auto;
   max-height: none;
@@ -1084,8 +1084,8 @@ a:hover {
   }
 
   .detail-panel {
-    width: min(780px, calc(100vw - 300px));
-    min-width: 520px;
+    width: min(900px, calc(100vw - 260px));
+    min-width: 580px;
   }
 }
 
