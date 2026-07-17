@@ -28,6 +28,7 @@
             <span aria-hidden="true">⌕</span>
             <input id="globalSearch" type="search" placeholder="搜索事项、任务、PR、问题单、失败原因或URL" />
           </label>
+          <button id="importantNotesBtn" type="button" title="打开或收起重要笔记">笔记</button>
           <button id="toggleLeftRailBtn" type="button" title="收起或展开左侧概览">收起侧栏</button>
           <div class="segmented" aria-label="视图切换">
             <button id="listViewBtn" type="button" class="active">列表</button>
@@ -121,6 +122,7 @@
         </section>
 
         <aside id="detailPanel" class="detail-panel" aria-label="事项详情"></aside>
+        <aside id="notesPanel" class="notes-panel" aria-label="重要笔记" aria-hidden="true"></aside>
       </main>
     </div>
 

@@ -245,6 +245,12 @@ a:hover {
   color: #fff;
 }
 
+.active-lite {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
 .text-btn {
   min-height: auto;
   padding: 0;
@@ -278,7 +284,8 @@ a:hover {
 }
 
 .left-rail,
-.detail-panel {
+.detail-panel,
+.notes-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -295,7 +302,8 @@ a:hover {
 
 .main-panel,
 .panel,
-.detail-panel {
+.detail-panel,
+.notes-panel {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -337,6 +345,62 @@ a:hover {
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
+}
+
+.notes-panel {
+  position: fixed;
+  top: 86px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 42;
+  width: min(460px, calc(100vw - 28px));
+  padding: 0;
+  overflow: auto;
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.notes-panel.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.notes-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, #ffffff 0, var(--surface-soft) 100%);
+}
+
+.notes-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.notes-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notes-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
 }
 
 .section-title,
@@ -936,6 +1000,14 @@ a:hover {
   gap: 8px;
 }
 
+.notes-panel .important-list {
+  padding: 12px;
+}
+
+.notes-panel .empty-state {
+  margin: 12px;
+}
+
 .info-card {
   display: grid;
   gap: 10px;
@@ -1237,6 +1309,10 @@ a:hover {
     width: min(980px, calc(100vw - 250px));
     min-width: 580px;
   }
+
+  .notes-panel {
+    width: min(440px, calc(100vw - 24px));
+  }
 }
 
 @media (max-width: 860px) {
@@ -1282,6 +1358,14 @@ a:hover {
     left: 10px;
     width: auto;
     min-width: 0;
+  }
+
+  .notes-panel {
+    top: 72px;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
   }
 
   .list-header {

@@ -44,7 +44,7 @@
   const ISSUE_STATUSES = ["无需走单", "待创建", "已创建", "处理中", "待验证", "已解决", "已关闭", "已取消"];
   const ISSUE_TYPES = ["事项单", "缺陷单", "测试问题", "门禁问题", "变更单", "其他"];
   const LOG_TYPES = ["代码开发", "问题修复", "PR创建", "PR更新", "测试完成", "门禁通过", "PR合入", "文档完成", "事项确认", "其他"];
-  const IMPORTANT_INFO_TYPES = ["命令", "Wiki", "链接", "备注"];
+  const NOTE_PAGE_TYPES = ["命令", "Wiki", "链接", "备注"];
 
   const STAGE_PROGRESS = {
     待分析: 5,
@@ -73,10 +73,12 @@
       showArchived: false,
       leftCollapsed: false,
       detailOpen: false,
+      notesOpen: false,
       selectedId: null,
       focusTarget: "",
     },
     requirements: [],
+    notePages: [],
   };
   let saveTimer = null;
 
@@ -104,6 +106,7 @@
       globalSearch: document.querySelector("#globalSearch"),
       workspace: document.querySelector(".workspace"),
       toggleLeftRailBtn: document.querySelector("#toggleLeftRailBtn"),
+      importantNotesBtn: document.querySelector("#importantNotesBtn"),
       listViewBtn: document.querySelector("#listViewBtn"),
       boardViewBtn: document.querySelector("#boardViewBtn"),
       newRequirementBtn: document.querySelector("#newRequirementBtn"),
@@ -128,6 +131,7 @@
       resultSummary: document.querySelector("#resultSummary"),
       contentArea: document.querySelector("#contentArea"),
       detailPanel: document.querySelector("#detailPanel"),
+      notesPanel: document.querySelector("#notesPanel"),
       modalHost: document.querySelector("#modalHost"),
       toastHost: document.querySelector("#toastHost"),
     });
@@ -141,6 +145,11 @@
     });
     dom.toggleLeftRailBtn.addEventListener("click", () => {
       state.ui.leftCollapsed = !state.ui.leftCollapsed;
+      render();
+      persistSoon();
+    });
+    dom.importantNotesBtn.addEventListener("click", () => {
+      state.ui.notesOpen = !state.ui.notesOpen;
       render();
       persistSoon();
     });
@@ -169,6 +178,7 @@
     dom.contentArea.addEventListener("click", handleContentClick);
     dom.contentArea.addEventListener("change", handleContentChange);
     dom.detailPanel.addEventListener("click", handleDetailClick);
+    dom.notesPanel.addEventListener("click", handleNotesPanelClick);
     dom.modalHost.addEventListener("click", (event) => event.stopPropagation());
     document.addEventListener("click", handleOutsideDetailClick);
   }
@@ -202,6 +212,7 @@
     renderTodos();
     renderMain();
     renderDetail();
+    renderNotesPanel();
   }
 
   function syncControls() {
@@ -215,6 +226,10 @@
     dom.workspace.classList.toggle("detail-open", Boolean(state.ui.detailOpen));
     dom.detailPanel.classList.toggle("open", Boolean(state.ui.detailOpen && state.ui.selectedId));
     dom.detailPanel.setAttribute("aria-hidden", state.ui.detailOpen && state.ui.selectedId ? "false" : "true");
+    dom.notesPanel.classList.toggle("open", Boolean(state.ui.notesOpen));
+    dom.notesPanel.setAttribute("aria-hidden", state.ui.notesOpen ? "false" : "true");
+    dom.importantNotesBtn.textContent = state.ui.notesOpen ? `收起笔记(${state.notePages.length})` : `笔记(${state.notePages.length})`;
+    dom.importantNotesBtn.classList.toggle("active-lite", Boolean(state.ui.notesOpen));
     dom.toggleLeftRailBtn.textContent = state.ui.leftCollapsed ? "展开侧栏" : "收起侧栏";
     dom.toggleLeftRailBtn.title = state.ui.leftCollapsed ? "展开左侧概览" : "收起左侧概览";
     dom.collapseAllBtn.textContent = state.ui.detailOpen ? "关闭详情" : "详情未打开";
@@ -452,14 +467,6 @@
         ${req.isBlocked ? `<p class="hint"><strong>阻塞原因：</strong>${h(req.blockedReason || "未填写")}</p>` : ""}
       </section>
 
-      <section class="detail-section" id="${h(focusId("section", "importantInfos"))}">
-        <div class="section-title">
-          <h3>重要信息</h3>
-          <button type="button" data-action="add-important-info" data-id="${req.id}">新增信息</button>
-        </div>
-        ${renderImportantInfos(req)}
-      </section>
-
       <section class="detail-section">
         <div class="section-title">
           <h3>下一步动作</h3>
@@ -499,31 +506,49 @@
     focusPendingDetailTarget();
   }
 
-  function renderImportantInfos(req) {
-    const infos = (req.importantInfos || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
-    if (!infos.length) return `<div class="empty-state">暂无重要信息。</div>`;
+  function renderNotesPanel() {
+    const pages = getSortedNotePages();
+    dom.notesPanel.innerHTML = `
+      <div class="notes-head">
+        <div>
+          <h2>重要笔记</h2>
+          <p>${pages.length ? `共 ${pages.length} 个页面` : "独立于事项的个人笔记"}</p>
+        </div>
+        <button type="button" data-action="close-notes" aria-label="关闭笔记">关闭</button>
+      </div>
+      <div class="notes-toolbar">
+        <button type="button" class="primary-btn" data-action="add-note-page">新增页面</button>
+        <button type="button" data-action="export-note-pages">导出MD</button>
+      </div>
+      ${renderNotePages(pages)}
+    `;
+  }
+
+  function renderNotePages(pages) {
+    if (!pages.length) return `<div class="empty-state">暂无笔记页面。</div>`;
     return `
       <div class="important-list">
-        ${infos
+        ${pages
           .map(
-            (info) => `
-              <article class="info-card" id="${h(focusId("info", info.id))}">
+            (page) => `
+              <article class="info-card" id="${h(focusId("note", page.id))}">
                 <div class="info-card-main">
                   <div>
                     <div class="info-title-line">
-                      <span class="info-type ${h(infoTypeClass(info.type))}">${h(info.type || "备注")}</span>
-                      <strong>${h(info.title || info.url || "未命名信息")}</strong>
+                      <span class="info-type ${h(noteTypeClass(page.type))}">${h(page.type || "备注")}</span>
+                      <strong>${h(page.title || page.url || "未命名页面")}</strong>
                     </div>
-                    ${info.url ? `<a href="${h(safeHref(info.url))}" target="_blank" rel="noreferrer">${h(info.url)}</a>` : ""}
+                    ${page.sourceTitle ? `<div class="meta-line"><span class="tag">迁移自 ${h(page.sourceTitle)}</span></div>` : ""}
+                    ${page.url ? `<a href="${h(safeHref(page.url))}" target="_blank" rel="noreferrer">${h(page.url)}</a>` : ""}
                   </div>
                   <div class="compact-actions">
-                    ${info.url ? `<button type="button" data-action="open-url" data-url="${h(info.url)}">打开</button>` : ""}
-                    <button type="button" data-action="copy-important-info" data-id="${req.id}" data-info-id="${info.id}">复制</button>
-                    <button type="button" data-action="edit-important-info" data-id="${req.id}" data-info-id="${info.id}">编辑</button>
-                    <button type="button" class="danger-ghost" data-action="delete-important-info" data-id="${req.id}" data-info-id="${info.id}">删除</button>
+                    ${page.url ? `<button type="button" data-action="open-url" data-url="${h(page.url)}">打开</button>` : ""}
+                    <button type="button" data-action="copy-note-page" data-note-id="${page.id}">复制</button>
+                    <button type="button" data-action="edit-note-page" data-note-id="${page.id}">编辑</button>
+                    <button type="button" class="danger-ghost" data-action="delete-note-page" data-note-id="${page.id}">删除</button>
                   </div>
                 </div>
-                ${info.content ? `<pre class="info-content ${info.type === "命令" ? "command-content" : ""}">${h(info.content)}</pre>` : ""}
+                ${page.content ? `<pre class="info-content ${page.type === "命令" ? "command-content" : ""}">${h(page.content)}</pre>` : ""}
               </article>
             `,
           )
@@ -828,8 +853,24 @@
     dispatchAction(button);
   }
 
+  function handleNotesPanelClick(event) {
+    event.stopPropagation();
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+    event.preventDefault();
+    dispatchAction(button);
+  }
+
   function handleOutsideDetailClick(event) {
-    if (!state.ui.detailOpen || dom.modalHost.contains(event.target) || dom.detailPanel.contains(event.target)) return;
+    if (
+      !state.ui.detailOpen ||
+      dom.modalHost.contains(event.target) ||
+      dom.detailPanel.contains(event.target) ||
+      dom.notesPanel.contains(event.target) ||
+      dom.importantNotesBtn.contains(event.target)
+    ) {
+      return;
+    }
     const actionEl = event.target.closest("[data-action]");
     if (actionEl && ["select-req", "todo-jump"].includes(actionEl.dataset.action)) return;
     closeDetail();
@@ -838,6 +879,12 @@
   function dispatchAction(el) {
     const action = el.dataset.action;
     if (action === "close-detail") return closeDetail();
+    if (action === "close-notes") return closeNotesPanel();
+    if (action === "add-note-page") return openNotePageForm();
+    if (action === "edit-note-page") return openNotePageForm(findNotePage(el.dataset.noteId));
+    if (action === "copy-note-page") return copyNotePage(findNotePage(el.dataset.noteId));
+    if (action === "delete-note-page") return deleteNotePage(findNotePage(el.dataset.noteId));
+    if (action === "export-note-pages") return exportNotePagesMarkdown();
     const req = findRequirement(el.dataset.id);
     if (action === "select-req" || action === "todo-jump") return selectRequirement(el.dataset.id, el.dataset.focusTarget || "");
     if (action === "open-url") return openUrl(el.dataset.url);
@@ -848,7 +895,6 @@
     const test = pr ? findTest(pr, el.dataset.testId) : null;
     const gate = branch ? findGate(branch, el.dataset.gateId) : null;
     const issue = req ? findIssue(req, el.dataset.issueId) : null;
-    const importantInfo = req ? findImportantInfo(req, el.dataset.infoId) : null;
     const actionItem = req ? findAction(req, el.dataset.actionId) : null;
     const log = req ? findLog(req, el.dataset.logId) : null;
 
@@ -859,10 +905,6 @@
       "archive-req": () => archiveRequirement(req, true),
       "restore-req": () => archiveRequirement(req, false),
       "delete-req": () => deleteRequirement(req),
-      "add-important-info": () => openImportantInfoForm(req),
-      "edit-important-info": () => openImportantInfoForm(req, importantInfo),
-      "copy-important-info": () => copyImportantInfo(importantInfo),
-      "delete-important-info": () => deleteImportantInfo(req, importantInfo),
       "add-action": () => openActionForm(req),
       "edit-action": () => openActionForm(req, actionItem),
       "finish-action": () => finishAction(req, actionItem),
@@ -900,6 +942,12 @@
   function closeDetail() {
     state.ui.detailOpen = false;
     state.ui.focusTarget = "";
+    render();
+    persistSoon();
+  }
+
+  function closeNotesPanel() {
+    state.ui.notesOpen = false;
     render();
     persistSoon();
   }
@@ -992,7 +1040,6 @@
             completedAt: "",
             isArchived: false,
             archivedAt: "",
-            importantInfos: [],
             actions: [],
             logs: [],
             branches: createDefaultBranches(),
@@ -1035,20 +1082,20 @@
     };
   }
 
-  function openImportantInfoForm(req, info = null) {
-    const values = info || {
+  function openNotePageForm(page = null) {
+    const values = page || {
       type: "备注",
       title: "",
       url: "",
       content: "",
     };
     openForm({
-      title: info ? "编辑重要信息" : "新增重要信息",
+      title: page ? "编辑笔记页面" : "新增笔记页面",
       fields: [
-        field("type", "类型", "select", { options: IMPORTANT_INFO_TYPES }),
-        field("title", "标题"),
+        field("type", "类型", "select", { options: NOTE_PAGE_TYPES }),
+        field("title", "页面标题"),
         field("url", "Wiki/链接地址", "text", { full: true }),
-        field("content", "内容", "textarea", { full: true }),
+        field("content", "页面内容", "textarea", { full: true }),
       ],
       values,
       onSubmit: (form) => {
@@ -1063,21 +1110,20 @@
           toast("请至少填写标题、链接或内容。");
           return false;
         }
-        req.importantInfos = Array.isArray(req.importantInfos) ? req.importantInfos : [];
-        if (info) {
-          Object.assign(info, payload);
+        state.notePages = Array.isArray(state.notePages) ? state.notePages : [];
+        if (page) {
+          Object.assign(page, payload);
         } else {
-          req.importantInfos.push({ id: uid("info"), ...payload, createdAt: nowIso() });
+          state.notePages.push({ id: uid("note"), ...payload, createdAt: nowIso() });
         }
-        touchRequirement(req);
         commit();
-        toast("重要信息已保存。");
+        toast("笔记页面已保存。");
         return true;
       },
-      dangerAction: info
+      dangerAction: page
         ? {
-            label: "删除重要信息",
-            onClick: () => deleteImportantInfo(req, info),
+            label: "删除笔记页面",
+            onClick: () => deleteNotePage(page),
           }
         : null,
     });
@@ -1707,13 +1753,12 @@
     toast("事项已删除。");
   }
 
-  function deleteImportantInfo(req, info) {
-    if (!info) return false;
-    if (!window.confirm(`确认删除重要信息「${info.title || info.url || "未命名信息"}」？`)) return false;
-    req.importantInfos = (req.importantInfos || []).filter((item) => item.id !== info.id);
-    touchRequirement(req);
+  function deleteNotePage(page) {
+    if (!page) return false;
+    if (!window.confirm(`确认删除笔记页面「${page.title || page.url || "未命名页面"}」？`)) return false;
+    state.notePages = (state.notePages || []).filter((item) => item.id !== page.id);
     commit();
-    toast("重要信息已删除。");
+    toast("笔记页面已删除。");
     return true;
   }
 
@@ -2298,7 +2343,6 @@
       req.description,
       req.acceptanceCriteria,
       ...(req.tags || []),
-      ...(req.importantInfos || []).flatMap((info) => [info.type, info.title, info.url, info.content]),
       ...(req.actions || []).flatMap((action) => [action.content, action.relatedUrl, action.blockedReason, action.note]),
       ...(req.logs || []).flatMap((log) => [log.content, log.relatedUrl]),
       ...(req.issues || []).flatMap((issue) => [issue.title, issue.issueNo, issue.issueUrl, issue.resolution, issue.note]),
@@ -2319,6 +2363,10 @@
   function getPrimaryAction(req) {
     return (req.actions || []).find((action) => action.isPrimary && !["已完成", "已取消"].includes(action.status)) ||
       (req.actions || []).find((action) => !["已完成", "已取消"].includes(action.status));
+  }
+
+  function getSortedNotePages() {
+    return (state.notePages || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
   }
 
   function getSelectedRequirement() {
@@ -2353,8 +2401,8 @@
     return (req.issues || []).find((item) => item.id === id);
   }
 
-  function findImportantInfo(req, id) {
-    return (req.importantInfos || []).find((item) => item.id === id);
+  function findNotePage(id) {
+    return (state.notePages || []).find((item) => item.id === id);
   }
 
   function findLog(req, id) {
@@ -2700,14 +2748,14 @@
     return [...new Set((links || []).map((link) => String(link || "").trim()).filter(Boolean))];
   }
 
-  async function copyImportantInfo(info) {
-    if (!info) return;
-    const ok = await copyTextToClipboard(importantInfoCopyText(info));
-    toast(ok ? "重要信息已复制到剪贴板。" : "复制失败，请检查浏览器剪贴板权限。");
+  async function copyNotePage(page) {
+    if (!page) return;
+    const ok = await copyTextToClipboard(notePageCopyText(page));
+    toast(ok ? "笔记页面已复制到剪贴板。" : "复制失败，请检查浏览器剪贴板权限。");
   }
 
-  function importantInfoCopyText(info) {
-    return [info.title, info.url, info.content].filter(Boolean).join("\n");
+  function notePageCopyText(page) {
+    return [page.title, page.url, page.content].filter(Boolean).join("\n");
   }
 
   async function copyTextToClipboard(text) {
@@ -2740,6 +2788,33 @@
     const snapshot = deepClone(state);
     downloadText(`rd-tracker-${suffix}-${todayDate()}.json`, JSON.stringify(snapshot, null, 2), "application/json;charset=utf-8");
     toast("JSON备份已导出。");
+  }
+
+  function exportNotePagesMarkdown() {
+    const pages = getSortedNotePages();
+    if (!pages.length) return toast("暂无可导出的笔记页面。");
+    downloadText(`rd-important-notes-${todayDate()}.md`, buildNotePagesMarkdown(pages), "text/markdown;charset=utf-8");
+    toast("重要笔记已导出为Markdown。");
+  }
+
+  function buildNotePagesMarkdown(pages) {
+    const lines = ["# 重要笔记", "", `导出时间：${formatDateTime(nowIso())}`, ""];
+    pages.forEach((page, index) => {
+      lines.push(`## ${index + 1}. ${page.title || page.url || "未命名页面"}`);
+      lines.push("");
+      lines.push(`- 类型：${page.type || "备注"}`);
+      if (page.url) lines.push(`- 链接：${page.url}`);
+      if (page.sourceTitle) lines.push(`- 来源事项：${page.sourceTitle}`);
+      lines.push(`- 更新时间：${formatDateTime(page.updatedAt || page.createdAt)}`);
+      if (page.content) {
+        lines.push("");
+        lines.push(page.type === "命令" ? "```bash" : "");
+        lines.push(page.content);
+        if (page.type === "命令") lines.push("```");
+      }
+      lines.push("");
+    });
+    return lines.join("\n");
   }
 
   function exportCsv() {
@@ -2916,17 +2991,24 @@
       showArchived: false,
       leftCollapsed: false,
       detailOpen: false,
+      notesOpen: false,
       selectedId: null,
       focusTarget: "",
       ...(next.ui || {}),
     };
     next.requirements = Array.isArray(next.requirements) ? next.requirements : [];
+    const hadNotePages = Array.isArray(next.notePages);
+    const migratedNotePages = hadNotePages ? next.notePages.slice() : Array.isArray(next.importantInfos) ? next.importantInfos.slice() : [];
     next.requirements.forEach((req) => {
       req.actions = Array.isArray(req.actions) ? req.actions : [];
       req.logs = Array.isArray(req.logs) ? req.logs : [];
       req.branches = Array.isArray(req.branches) ? req.branches : [];
       req.issues = Array.isArray(req.issues) ? req.issues : [];
-      req.importantInfos = Array.isArray(req.importantInfos) ? req.importantInfos : [];
+      const legacyImportantInfos = Array.isArray(req.importantInfos) ? req.importantInfos : [];
+      if (!hadNotePages && legacyImportantInfos.length) {
+        legacyImportantInfos.forEach((info) => migratedNotePages.push({ ...info, sourceTitle: req.title }));
+      }
+      req.importantInfos = [];
       req.tags = Array.isArray(req.tags) ? req.tags : splitTags(req.tags || "");
       req.priority = req.priority || "P2";
       req.status = req.status || "待分析";
@@ -2987,15 +3069,6 @@
         issue.status = issue.status || "待创建";
         issue.closedAt = isIssueClosedStatus(issue.status) ? issue.closedAt || todayDate() : "";
       });
-      req.importantInfos.forEach((info) => {
-        info.id = info.id || uid("info");
-        info.type = IMPORTANT_INFO_TYPES.includes(info.type) ? info.type : "备注";
-        info.title = info.title || "";
-        info.url = info.url || "";
-        info.content = info.content || "";
-        info.createdAt = info.createdAt || req.createdAt || nowIso();
-        info.updatedAt = info.updatedAt || info.createdAt;
-      });
       req.actions.forEach((action) => {
         action.id = action.id || uid("act");
         action.startedAt = action.startedAt || action.createdAt || req.createdAt || nowIso();
@@ -3004,7 +3077,24 @@
       });
       req.logs.forEach((log) => (log.id = log.id || uid("log")));
     });
+    next.notePages = migratedNotePages.map(normalizeNotePage);
+    delete next.importantInfos;
     return next;
+  }
+
+  function normalizeNotePage(page) {
+    const now = nowIso();
+    const createdAt = page.createdAt || now;
+    return {
+      id: page.id || uid("note"),
+      type: NOTE_PAGE_TYPES.includes(page.type) ? page.type : "备注",
+      title: page.title || "",
+      url: page.url || "",
+      content: page.content || "",
+      sourceTitle: page.sourceTitle || "",
+      createdAt,
+      updatedAt: page.updatedAt || createdAt,
+    };
   }
 
   function createEmptyState() {
@@ -3020,10 +3110,12 @@
         showArchived: false,
         leftCollapsed: false,
         detailOpen: false,
+        notesOpen: false,
         selectedId: null,
         focusTarget: "",
       },
       requirements: [],
+      notePages: [],
     };
   }
 
@@ -3092,7 +3184,6 @@
           createdAt: addHoursIso(-25),
         },
       ],
-      importantInfos: [],
       branches: [
         demoBranch("蓝区Master分支", "已完成", "蓝区master", true, 1, [
           demoPr("适配主干接口变更", "1024", "已合入", true, [
@@ -3189,7 +3280,6 @@
         },
       ],
       logs: [],
-      importantInfos: [],
       branches: [
         demoBranch("Dev分支", "待合入", "dev", true, 1, [
           demoPr("帐号模块空指针修复", "2033", "已批准", false, [
@@ -3213,9 +3303,11 @@
         showArchived: false,
         leftCollapsed: false,
         detailOpen: false,
+        notesOpen: false,
         selectedId: req1.id,
       },
       requirements: [req1, req2],
+      notePages: [],
     };
   }
 
@@ -3356,7 +3448,6 @@
     (req.actions || []).forEach((item) => (item.id = uid("act")));
     (req.logs || []).forEach((item) => (item.id = uid("log")));
     (req.issues || []).forEach((item) => (item.id = uid("issue")));
-    (req.importantInfos || []).forEach((item) => (item.id = uid("info")));
     (req.branches || []).forEach((branch) => {
       branch.id = uid("br");
       (branch.gates || []).forEach((gate) => (gate.id = uid("gate")));
@@ -3384,7 +3475,7 @@
     return "status-pill";
   }
 
-  function infoTypeClass(type) {
+  function noteTypeClass(type) {
     if (type === "命令") return "info-command";
     if (type === "Wiki") return "info-wiki";
     if (type === "链接") return "info-link";
