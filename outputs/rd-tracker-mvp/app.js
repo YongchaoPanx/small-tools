@@ -44,6 +44,7 @@
   const ISSUE_STATUSES = ["无需走单", "待创建", "已创建", "处理中", "待验证", "已解决", "已关闭", "已取消"];
   const ISSUE_TYPES = ["事项单", "缺陷单", "测试问题", "门禁问题", "变更单", "其他"];
   const LOG_TYPES = ["代码开发", "问题修复", "PR创建", "PR更新", "测试完成", "门禁通过", "PR合入", "文档完成", "事项确认", "其他"];
+  const IMPORTANT_INFO_TYPES = ["命令", "Wiki", "链接", "备注"];
 
   const STAGE_PROGRESS = {
     待分析: 5,
@@ -451,6 +452,14 @@
         ${req.isBlocked ? `<p class="hint"><strong>阻塞原因：</strong>${h(req.blockedReason || "未填写")}</p>` : ""}
       </section>
 
+      <section class="detail-section" id="${h(focusId("section", "importantInfos"))}">
+        <div class="section-title">
+          <h3>重要信息</h3>
+          <button type="button" data-action="add-important-info" data-id="${req.id}">新增信息</button>
+        </div>
+        ${renderImportantInfos(req)}
+      </section>
+
       <section class="detail-section">
         <div class="section-title">
           <h3>下一步动作</h3>
@@ -462,7 +471,10 @@
       <section class="detail-section">
         <div class="section-title">
           <h3>分支与PR</h3>
-          <button type="button" data-action="add-branch" data-id="${req.id}">新增分支</button>
+          <div class="compact-actions">
+            <button type="button" data-action="open-all-pr-gates" data-id="${req.id}">打开全部PR/门禁</button>
+            <button type="button" data-action="add-branch" data-id="${req.id}">新增分支</button>
+          </div>
         </div>
         ${renderBranches(req)}
       </section>
@@ -485,6 +497,39 @@
       </section>
     `;
     focusPendingDetailTarget();
+  }
+
+  function renderImportantInfos(req) {
+    const infos = (req.importantInfos || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
+    if (!infos.length) return `<div class="empty-state">暂无重要信息。</div>`;
+    return `
+      <div class="important-list">
+        ${infos
+          .map(
+            (info) => `
+              <article class="info-card" id="${h(focusId("info", info.id))}">
+                <div class="info-card-main">
+                  <div>
+                    <div class="info-title-line">
+                      <span class="info-type ${h(infoTypeClass(info.type))}">${h(info.type || "备注")}</span>
+                      <strong>${h(info.title || info.url || "未命名信息")}</strong>
+                    </div>
+                    ${info.url ? `<a href="${h(safeHref(info.url))}" target="_blank" rel="noreferrer">${h(info.url)}</a>` : ""}
+                  </div>
+                  <div class="compact-actions">
+                    ${info.url ? `<button type="button" data-action="open-url" data-url="${h(info.url)}">打开</button>` : ""}
+                    <button type="button" data-action="copy-important-info" data-id="${req.id}" data-info-id="${info.id}">复制</button>
+                    <button type="button" data-action="edit-important-info" data-id="${req.id}" data-info-id="${info.id}">编辑</button>
+                    <button type="button" class="danger-ghost" data-action="delete-important-info" data-id="${req.id}" data-info-id="${info.id}">删除</button>
+                  </div>
+                </div>
+                ${info.content ? `<pre class="info-content ${info.type === "命令" ? "command-content" : ""}">${h(info.content)}</pre>` : ""}
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
   }
 
   function renderActions(req) {
@@ -566,7 +611,7 @@
           </div>
           <div class="compact-actions">
             ${branch.repositoryUrl ? `<button type="button" data-action="open-url" data-url="${h(branch.repositoryUrl)}">仓库</button>` : ""}
-            <button type="button" data-action="open-branch-pr-gates" data-id="${req.id}" data-branch-id="${branch.id}">打开PR/门禁</button>
+            <button type="button" data-action="open-branch-pr-gates" data-id="${req.id}" data-branch-id="${branch.id}">打开本分支</button>
             <button type="button" data-action="export-branch-pr-links" data-id="${req.id}" data-branch-id="${branch.id}">导出PR链接</button>
             <button type="button" data-action="edit-branch" data-id="${req.id}" data-branch-id="${branch.id}">编辑</button>
             <button type="button" data-action="add-pr" data-id="${req.id}" data-branch-id="${branch.id}">新增PR</button>
@@ -803,6 +848,7 @@
     const test = pr ? findTest(pr, el.dataset.testId) : null;
     const gate = branch ? findGate(branch, el.dataset.gateId) : null;
     const issue = req ? findIssue(req, el.dataset.issueId) : null;
+    const importantInfo = req ? findImportantInfo(req, el.dataset.infoId) : null;
     const actionItem = req ? findAction(req, el.dataset.actionId) : null;
     const log = req ? findLog(req, el.dataset.logId) : null;
 
@@ -813,6 +859,10 @@
       "archive-req": () => archiveRequirement(req, true),
       "restore-req": () => archiveRequirement(req, false),
       "delete-req": () => deleteRequirement(req),
+      "add-important-info": () => openImportantInfoForm(req),
+      "edit-important-info": () => openImportantInfoForm(req, importantInfo),
+      "copy-important-info": () => copyImportantInfo(importantInfo),
+      "delete-important-info": () => deleteImportantInfo(req, importantInfo),
       "add-action": () => openActionForm(req),
       "edit-action": () => openActionForm(req, actionItem),
       "finish-action": () => finishAction(req, actionItem),
@@ -828,6 +878,7 @@
       "complete-pr-tests": () => completePrTests(req, branch, pr),
       "add-gate": () => openGateForm(req, branch),
       "edit-gate": () => openGateForm(req, branch, gate),
+      "open-all-pr-gates": () => openRequirementPrAndGates(req),
       "open-branch-pr-gates": () => openBranchPrAndGates(branch),
       "export-branch-pr-links": () => exportBranchPrLinks(req, branch),
       "add-issue": () => openIssueForm(req),
@@ -941,6 +992,7 @@
             completedAt: "",
             isArchived: false,
             archivedAt: "",
+            importantInfos: [],
             actions: [],
             logs: [],
             branches: createDefaultBranches(),
@@ -981,6 +1033,54 @@
       isBlocked: Boolean(form.isBlocked),
       blockedReason: form.isBlocked ? form.blockedReason.trim() : "",
     };
+  }
+
+  function openImportantInfoForm(req, info = null) {
+    const values = info || {
+      type: "备注",
+      title: "",
+      url: "",
+      content: "",
+    };
+    openForm({
+      title: info ? "编辑重要信息" : "新增重要信息",
+      fields: [
+        field("type", "类型", "select", { options: IMPORTANT_INFO_TYPES }),
+        field("title", "标题"),
+        field("url", "Wiki/链接地址", "text", { full: true }),
+        field("content", "内容", "textarea", { full: true }),
+      ],
+      values,
+      onSubmit: (form) => {
+        const payload = {
+          type: form.type,
+          title: form.title.trim(),
+          url: form.url.trim(),
+          content: form.content.trim(),
+          updatedAt: nowIso(),
+        };
+        if (!payload.title && !payload.url && !payload.content) {
+          toast("请至少填写标题、链接或内容。");
+          return false;
+        }
+        req.importantInfos = Array.isArray(req.importantInfos) ? req.importantInfos : [];
+        if (info) {
+          Object.assign(info, payload);
+        } else {
+          req.importantInfos.push({ id: uid("info"), ...payload, createdAt: nowIso() });
+        }
+        touchRequirement(req);
+        commit();
+        toast("重要信息已保存。");
+        return true;
+      },
+      dangerAction: info
+        ? {
+            label: "删除重要信息",
+            onClick: () => deleteImportantInfo(req, info),
+          }
+        : null,
+    });
   }
 
   function openActionForm(req, action = null) {
@@ -1607,6 +1707,16 @@
     toast("事项已删除。");
   }
 
+  function deleteImportantInfo(req, info) {
+    if (!info) return false;
+    if (!window.confirm(`确认删除重要信息「${info.title || info.url || "未命名信息"}」？`)) return false;
+    req.importantInfos = (req.importantInfos || []).filter((item) => item.id !== info.id);
+    touchRequirement(req);
+    commit();
+    toast("重要信息已删除。");
+    return true;
+  }
+
   function deleteAction(req, action) {
     if (!action) return false;
     if (!window.confirm(`确认删除动作「${action.content || "未命名动作"}」？`)) return false;
@@ -2188,6 +2298,7 @@
       req.description,
       req.acceptanceCriteria,
       ...(req.tags || []),
+      ...(req.importantInfos || []).flatMap((info) => [info.type, info.title, info.url, info.content]),
       ...(req.actions || []).flatMap((action) => [action.content, action.relatedUrl, action.blockedReason, action.note]),
       ...(req.logs || []).flatMap((log) => [log.content, log.relatedUrl]),
       ...(req.issues || []).flatMap((issue) => [issue.title, issue.issueNo, issue.issueUrl, issue.resolution, issue.note]),
@@ -2240,6 +2351,10 @@
 
   function findIssue(req, id) {
     return (req.issues || []).find((item) => item.id === id);
+  }
+
+  function findImportantInfo(req, id) {
+    return (req.importantInfos || []).find((item) => item.id === id);
   }
 
   function findLog(req, id) {
@@ -2553,14 +2668,28 @@
     toast(ok ? "PR链接已复制到剪贴板。" : "复制失败，请检查浏览器剪贴板权限。");
   }
 
+  function openRequirementPrAndGates(req) {
+    if (!req) return;
+    const branches = req.branches || [];
+    const prLinks = uniqueLinks(branches.flatMap((branch) => (branch.prs || []).map((pr) => pr.prUrl)));
+    const gateLinks = uniqueLinks(branches.flatMap((branch) => (branch.gates || []).map((gate) => gate.gateUrl)));
+    openPrAndGateLinks(prLinks, gateLinks, "当前事项没有可打开的PR或门禁链接。");
+  }
+
   function openBranchPrAndGates(branch) {
     if (!branch) return;
     const prLinks = uniqueLinks((branch.prs || []).map((pr) => pr.prUrl));
     const gateLinks = uniqueLinks((branch.gates || []).map((gate) => gate.gateUrl));
-    const links = [...prLinks, ...gateLinks.filter((link) => !prLinks.includes(link))];
-    if (!links.length) return toast("该分支没有可打开的PR或门禁链接。");
+    openPrAndGateLinks(prLinks, gateLinks, "该分支没有可打开的PR或门禁链接。");
+  }
 
-    links.forEach((link) => window.open(safeHref(link), "_blank", "noopener,noreferrer"));
+  function openPrAndGateLinks(prLinks, gateLinks, emptyMessage) {
+    const links = uniqueLinks([...prLinks, ...gateLinks]);
+    if (!links.length) return toast(emptyMessage);
+
+    links.forEach((link) => {
+      window.open(safeHref(link), "_blank", "noopener,noreferrer");
+    });
     const parts = [];
     if (prLinks.length) parts.push(`${prLinks.length} 个PR`);
     if (gateLinks.length) parts.push(`${gateLinks.length} 个门禁`);
@@ -2569,6 +2698,16 @@
 
   function uniqueLinks(links) {
     return [...new Set((links || []).map((link) => String(link || "").trim()).filter(Boolean))];
+  }
+
+  async function copyImportantInfo(info) {
+    if (!info) return;
+    const ok = await copyTextToClipboard(importantInfoCopyText(info));
+    toast(ok ? "重要信息已复制到剪贴板。" : "复制失败，请检查浏览器剪贴板权限。");
+  }
+
+  function importantInfoCopyText(info) {
+    return [info.title, info.url, info.content].filter(Boolean).join("\n");
   }
 
   async function copyTextToClipboard(text) {
@@ -2787,6 +2926,7 @@
       req.logs = Array.isArray(req.logs) ? req.logs : [];
       req.branches = Array.isArray(req.branches) ? req.branches : [];
       req.issues = Array.isArray(req.issues) ? req.issues : [];
+      req.importantInfos = Array.isArray(req.importantInfos) ? req.importantInfos : [];
       req.tags = Array.isArray(req.tags) ? req.tags : splitTags(req.tags || "");
       req.priority = req.priority || "P2";
       req.status = req.status || "待分析";
@@ -2846,6 +2986,15 @@
         issue.id = issue.id || uid("issue");
         issue.status = issue.status || "待创建";
         issue.closedAt = isIssueClosedStatus(issue.status) ? issue.closedAt || todayDate() : "";
+      });
+      req.importantInfos.forEach((info) => {
+        info.id = info.id || uid("info");
+        info.type = IMPORTANT_INFO_TYPES.includes(info.type) ? info.type : "备注";
+        info.title = info.title || "";
+        info.url = info.url || "";
+        info.content = info.content || "";
+        info.createdAt = info.createdAt || req.createdAt || nowIso();
+        info.updatedAt = info.updatedAt || info.createdAt;
       });
       req.actions.forEach((action) => {
         action.id = action.id || uid("act");
@@ -2943,6 +3092,7 @@
           createdAt: addHoursIso(-25),
         },
       ],
+      importantInfos: [],
       branches: [
         demoBranch("蓝区Master分支", "已完成", "蓝区master", true, 1, [
           demoPr("适配主干接口变更", "1024", "已合入", true, [
@@ -3039,6 +3189,7 @@
         },
       ],
       logs: [],
+      importantInfos: [],
       branches: [
         demoBranch("Dev分支", "待合入", "dev", true, 1, [
           demoPr("帐号模块空指针修复", "2033", "已批准", false, [
@@ -3205,6 +3356,7 @@
     (req.actions || []).forEach((item) => (item.id = uid("act")));
     (req.logs || []).forEach((item) => (item.id = uid("log")));
     (req.issues || []).forEach((item) => (item.id = uid("issue")));
+    (req.importantInfos || []).forEach((item) => (item.id = uid("info")));
     (req.branches || []).forEach((branch) => {
       branch.id = uid("br");
       (branch.gates || []).forEach((gate) => (gate.id = uid("gate")));
@@ -3230,6 +3382,13 @@
     if (status === "测试失败") return "test-failed";
     if (status === "测试中") return "test-running";
     return "status-pill";
+  }
+
+  function infoTypeClass(type) {
+    if (type === "命令") return "info-command";
+    if (type === "Wiki") return "info-wiki";
+    if (type === "链接") return "info-link";
+    return "info-note";
   }
 
   function priorityScore(priority) {
