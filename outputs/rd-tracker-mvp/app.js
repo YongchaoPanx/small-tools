@@ -467,6 +467,14 @@
         ${req.isBlocked ? `<p class="hint"><strong>阻塞原因：</strong>${h(req.blockedReason || "未填写")}</p>` : ""}
       </section>
 
+      <section class="detail-section" id="${h(focusId("section", "notes"))}">
+        <div class="section-title">
+          <h3>事项笔记</h3>
+          <button type="button" data-action="add-req-note-page" data-id="${req.id}">新增笔记</button>
+        </div>
+        ${renderNotePages(getSortedRequirementNotePages(req), { req, emptyText: "暂无事项笔记。" })}
+      </section>
+
       <section class="detail-section">
         <div class="section-title">
           <h3>下一步动作</h3>
@@ -524,8 +532,24 @@
     `;
   }
 
-  function renderNotePages(pages) {
-    if (!pages.length) return `<div class="empty-state">暂无笔记页面。</div>`;
+  function renderNotePages(pages, options = {}) {
+    const { req = null, emptyText = "暂无笔记页面。" } = options;
+    if (!pages.length) return `<div class="empty-state">${h(emptyText)}</div>`;
+    const actions = req
+      ? {
+          copy: "copy-req-note-page",
+          edit: "edit-req-note-page",
+          delete: "delete-req-note-page",
+          deleteImage: "delete-req-note-image",
+          extra: ` data-id="${h(req.id)}"`,
+        }
+      : {
+          copy: "copy-note-page",
+          edit: "edit-note-page",
+          delete: "delete-note-page",
+          deleteImage: "delete-note-image",
+          extra: "",
+        };
     return `
       <div class="important-list">
         ${pages
@@ -543,13 +567,36 @@
                   </div>
                   <div class="compact-actions">
                     ${page.url ? `<button type="button" data-action="open-url" data-url="${h(page.url)}">打开</button>` : ""}
-                    <button type="button" data-action="copy-note-page" data-note-id="${page.id}">复制</button>
-                    <button type="button" data-action="edit-note-page" data-note-id="${page.id}">编辑</button>
-                    <button type="button" class="danger-ghost" data-action="delete-note-page" data-note-id="${page.id}">删除</button>
+                    <button type="button" data-action="${actions.copy}"${actions.extra} data-note-id="${h(page.id)}">复制</button>
+                    <button type="button" data-action="${actions.edit}"${actions.extra} data-note-id="${h(page.id)}">编辑</button>
+                    <button type="button" class="danger-ghost" data-action="${actions.delete}"${actions.extra} data-note-id="${h(page.id)}">删除</button>
                   </div>
                 </div>
                 ${page.content ? `<pre class="info-content ${page.type === "命令" ? "command-content" : ""}">${h(page.content)}</pre>` : ""}
+                ${renderNoteImages(page, actions)}
               </article>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  function renderNoteImages(page, actions) {
+    const images = page.images || [];
+    if (!images.length) return "";
+    return `
+      <div class="note-images">
+        ${images
+          .map(
+            (image) => `
+              <figure class="note-image">
+                <img src="${h(image.dataUrl)}" alt="${h(image.name || "笔记图片")}" loading="lazy" />
+                <figcaption>
+                  <span>${h(image.name || "图片")}</span>
+                  <button type="button" class="text-btn danger-text" data-action="${actions.deleteImage}"${actions.extra} data-note-id="${h(page.id)}" data-image-id="${h(image.id)}">删图</button>
+                </figcaption>
+              </figure>
             `,
           )
           .join("")}
@@ -884,6 +931,7 @@
     if (action === "edit-note-page") return openNotePageForm(findNotePage(el.dataset.noteId));
     if (action === "copy-note-page") return copyNotePage(findNotePage(el.dataset.noteId));
     if (action === "delete-note-page") return deleteNotePage(findNotePage(el.dataset.noteId));
+    if (action === "delete-note-image") return deleteNoteImage(findNotePage(el.dataset.noteId), el.dataset.imageId);
     if (action === "export-note-pages") return exportNotePagesMarkdown();
     const req = findRequirement(el.dataset.id);
     if (action === "select-req" || action === "todo-jump") return selectRequirement(el.dataset.id, el.dataset.focusTarget || "");
@@ -895,6 +943,7 @@
     const test = pr ? findTest(pr, el.dataset.testId) : null;
     const gate = branch ? findGate(branch, el.dataset.gateId) : null;
     const issue = req ? findIssue(req, el.dataset.issueId) : null;
+    const reqNotePage = req ? findRequirementNotePage(req, el.dataset.noteId) : null;
     const actionItem = req ? findAction(req, el.dataset.actionId) : null;
     const log = req ? findLog(req, el.dataset.logId) : null;
 
@@ -905,6 +954,11 @@
       "archive-req": () => archiveRequirement(req, true),
       "restore-req": () => archiveRequirement(req, false),
       "delete-req": () => deleteRequirement(req),
+      "add-req-note-page": () => openNotePageForm(null, req),
+      "edit-req-note-page": () => openNotePageForm(reqNotePage, req),
+      "copy-req-note-page": () => copyNotePage(reqNotePage),
+      "delete-req-note-page": () => deleteNotePage(reqNotePage, req),
+      "delete-req-note-image": () => deleteNoteImage(reqNotePage, el.dataset.imageId, req),
       "add-action": () => openActionForm(req),
       "edit-action": () => openActionForm(req, actionItem),
       "finish-action": () => finishAction(req, actionItem),
@@ -1040,6 +1094,7 @@
             completedAt: "",
             isArchived: false,
             archivedAt: "",
+            notePages: [],
             actions: [],
             logs: [],
             branches: createDefaultBranches(),
@@ -1082,7 +1137,7 @@
     };
   }
 
-  function openNotePageForm(page = null) {
+  function openNotePageForm(page = null, req = null) {
     const values = page || {
       type: "备注",
       title: "",
@@ -1090,40 +1145,45 @@
       content: "",
     };
     openForm({
-      title: page ? "编辑笔记页面" : "新增笔记页面",
+      title: page ? (req ? "编辑事项笔记" : "编辑笔记页面") : req ? "新增事项笔记" : "新增笔记页面",
       fields: [
         field("type", "类型", "select", { options: NOTE_PAGE_TYPES }),
         field("title", "页面标题"),
         field("url", "Wiki/链接地址", "text", { full: true }),
         field("content", "页面内容", "textarea", { full: true }),
+        field("images", "插入图片", "file", { full: true, accept: "image/*", multiple: true, hint: page?.images?.length ? `已有 ${page.images.length} 张图片，重新选择会追加保存。` : "可选择多张图片，图片会保存在本地数据中。" }),
       ],
       values,
-      onSubmit: (form) => {
+      onSubmit: async (form) => {
+        const incomingImages = form.images || [];
         const payload = {
           type: form.type,
           title: form.title.trim(),
           url: form.url.trim(),
           content: form.content.trim(),
+          images: [...(page?.images || []), ...incomingImages],
           updatedAt: nowIso(),
         };
-        if (!payload.title && !payload.url && !payload.content) {
-          toast("请至少填写标题、链接或内容。");
+        if (!payload.title && !payload.url && !payload.content && !payload.images.length) {
+          toast("请至少填写标题、链接、内容或插入图片。");
           return false;
         }
-        state.notePages = Array.isArray(state.notePages) ? state.notePages : [];
+        const collectionOwner = req || state;
+        collectionOwner.notePages = Array.isArray(collectionOwner.notePages) ? collectionOwner.notePages : [];
         if (page) {
           Object.assign(page, payload);
         } else {
-          state.notePages.push({ id: uid("note"), ...payload, createdAt: nowIso() });
+          collectionOwner.notePages.push({ id: uid("note"), ...payload, createdAt: nowIso() });
         }
+        if (req) touchRequirement(req);
         commit();
-        toast("笔记页面已保存。");
+        toast(req ? "事项笔记已保存。" : "笔记页面已保存。");
         return true;
       },
       dangerAction: page
         ? {
-            label: "删除笔记页面",
-            onClick: () => deleteNotePage(page),
+            label: req ? "删除事项笔记" : "删除笔记页面",
+            onClick: () => deleteNotePage(page, req),
           }
         : null,
     });
@@ -1632,11 +1692,19 @@
     dom.modalHost.addEventListener("click", (event) => {
       if (event.target === dom.modalHost) closeModal();
     }, { once: true });
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const payload = collectForm(form, fields);
-      const success = onSubmit(payload);
-      if (success !== false) closeModal();
+      const submitButton = form.querySelector("button[type='submit']");
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const payload = await collectForm(form, fields);
+        const success = await onSubmit(payload);
+        if (success !== false) closeModal();
+      } catch (error) {
+        toast("保存失败，请重新选择图片后再试。");
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
     });
     const first = form.querySelector("input:not([type='checkbox']), textarea, select");
     first?.focus();
@@ -1673,6 +1741,15 @@
         </label>
       `;
     }
+    if (item.type === "file") {
+      return `
+        <label class="${full}">
+          ${label}
+          <input name="${h(item.name)}" type="file" ${item.accept ? `accept="${h(item.accept)}"` : ""} ${item.multiple ? "multiple" : ""}${required} />
+          ${item.hint ? `<span class="field-hint">${h(item.hint)}</span>` : ""}
+        </label>
+      `;
+    }
     return `
       <label class="${full}">
         ${label}
@@ -1681,13 +1758,43 @@
     `;
   }
 
-  function collectForm(form, fields) {
+  async function collectForm(form, fields) {
     const result = {};
-    fields.forEach((item) => {
+    for (const item of fields) {
       const node = form.elements[item.name];
-      result[item.name] = item.type === "checkbox" ? Boolean(node.checked) : node.value;
-    });
+      if (item.type === "checkbox") {
+        result[item.name] = Boolean(node.checked);
+      } else if (item.type === "file") {
+        result[item.name] = await readImageFiles(node.files);
+      } else {
+        result[item.name] = node.value;
+      }
+    }
     return result;
+  }
+
+  async function readImageFiles(files) {
+    const selected = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+    if (!selected.length) return [];
+    return Promise.all(
+      selected.map(
+        (file) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () =>
+              resolve({
+                id: uid("img"),
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                dataUrl: reader.result,
+                createdAt: nowIso(),
+              });
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          }),
+      ),
+    );
   }
 
   function field(name, label, type = "text", options = {}) {
@@ -1753,12 +1860,27 @@
     toast("事项已删除。");
   }
 
-  function deleteNotePage(page) {
+  function deleteNotePage(page, req = null) {
     if (!page) return false;
     if (!window.confirm(`确认删除笔记页面「${page.title || page.url || "未命名页面"}」？`)) return false;
-    state.notePages = (state.notePages || []).filter((item) => item.id !== page.id);
+    if (req) {
+      req.notePages = (req.notePages || []).filter((item) => item.id !== page.id);
+      touchRequirement(req);
+    } else {
+      state.notePages = (state.notePages || []).filter((item) => item.id !== page.id);
+    }
     commit();
-    toast("笔记页面已删除。");
+    toast(req ? "事项笔记已删除。" : "笔记页面已删除。");
+    return true;
+  }
+
+  function deleteNoteImage(page, imageId, req = null) {
+    if (!page || !imageId) return false;
+    page.images = (page.images || []).filter((image) => image.id !== imageId);
+    page.updatedAt = nowIso();
+    if (req) touchRequirement(req);
+    commit();
+    toast("图片已删除。");
     return true;
   }
 
@@ -2343,6 +2465,7 @@
       req.description,
       req.acceptanceCriteria,
       ...(req.tags || []),
+      ...(req.notePages || []).flatMap((page) => [page.type, page.title, page.url, page.content, ...(page.images || []).map((image) => image.name)]),
       ...(req.actions || []).flatMap((action) => [action.content, action.relatedUrl, action.blockedReason, action.note]),
       ...(req.logs || []).flatMap((log) => [log.content, log.relatedUrl]),
       ...(req.issues || []).flatMap((issue) => [issue.title, issue.issueNo, issue.issueUrl, issue.resolution, issue.note]),
@@ -2367,6 +2490,10 @@
 
   function getSortedNotePages() {
     return (state.notePages || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
+  }
+
+  function getSortedRequirementNotePages(req) {
+    return (req.notePages || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
   }
 
   function getSelectedRequirement() {
@@ -2403,6 +2530,10 @@
 
   function findNotePage(id) {
     return (state.notePages || []).find((item) => item.id === id);
+  }
+
+  function findRequirementNotePage(req, id) {
+    return (req.notePages || []).find((item) => item.id === id);
   }
 
   function findLog(req, id) {
@@ -2755,7 +2886,8 @@
   }
 
   function notePageCopyText(page) {
-    return [page.title, page.url, page.content].filter(Boolean).join("\n");
+    const imageNames = (page.images || []).map((image) => `[图片] ${image.name || "图片"}`);
+    return [page.title, page.url, page.content, ...imageNames].filter(Boolean).join("\n");
   }
 
   async function copyTextToClipboard(text) {
@@ -2812,6 +2944,10 @@
         lines.push(page.content);
         if (page.type === "命令") lines.push("```");
       }
+      (page.images || []).forEach((image) => {
+        lines.push("");
+        lines.push(`![${image.name || "图片"}](${image.dataUrl})`);
+      });
       lines.push("");
     });
     return lines.join("\n");
@@ -3004,6 +3140,7 @@
       req.logs = Array.isArray(req.logs) ? req.logs : [];
       req.branches = Array.isArray(req.branches) ? req.branches : [];
       req.issues = Array.isArray(req.issues) ? req.issues : [];
+      req.notePages = Array.isArray(req.notePages) ? req.notePages.map(normalizeNotePage) : [];
       const legacyImportantInfos = Array.isArray(req.importantInfos) ? req.importantInfos : [];
       if (!hadNotePages && legacyImportantInfos.length) {
         legacyImportantInfos.forEach((info) => migratedNotePages.push({ ...info, sourceTitle: req.title }));
@@ -3091,9 +3228,22 @@
       title: page.title || "",
       url: page.url || "",
       content: page.content || "",
+      images: Array.isArray(page.images) ? page.images.map(normalizeNoteImage).filter((image) => image.dataUrl) : [],
       sourceTitle: page.sourceTitle || "",
       createdAt,
       updatedAt: page.updatedAt || createdAt,
+    };
+  }
+
+  function normalizeNoteImage(image) {
+    const createdAt = image.createdAt || nowIso();
+    return {
+      id: image.id || uid("img"),
+      name: image.name || "图片",
+      type: image.type || "image/*",
+      size: Number(image.size || 0),
+      dataUrl: image.dataUrl || "",
+      createdAt,
     };
   }
 
@@ -3445,6 +3595,10 @@
 
   function reidRequirement(req) {
     req.id = uid("req");
+    (req.notePages || []).forEach((page) => {
+      page.id = uid("note");
+      (page.images || []).forEach((image) => (image.id = uid("img")));
+    });
     (req.actions || []).forEach((item) => (item.id = uid("act")));
     (req.logs || []).forEach((item) => (item.id = uid("log")));
     (req.issues || []).forEach((item) => (item.id = uid("issue")));
