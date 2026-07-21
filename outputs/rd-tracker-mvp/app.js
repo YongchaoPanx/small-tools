@@ -3,6 +3,7 @@
   const DB_VERSION = 1;
   const STORE = "kv";
   const STATE_KEY = "state";
+  const LOCAL_BACKUP_KEY = `${DB_NAME}-snapshot`;
 
   const REQUIREMENT_STATUSES = [
     "待分析",
@@ -181,6 +182,11 @@
     dom.notesPanel.addEventListener("click", handleNotesPanelClick);
     dom.modalHost.addEventListener("click", (event) => event.stopPropagation());
     document.addEventListener("click", handleOutsideDetailClick);
+    window.addEventListener("pagehide", persistNow);
+    window.addEventListener("beforeunload", persistNow);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") persistNow();
+    });
   }
 
   function setView(view) {
@@ -332,6 +338,9 @@
           <div class="row-actions">
             <button type="button" data-action="edit-req" data-id="${req.id}">编辑</button>
             <button type="button" data-action="add-action" data-id="${req.id}">动作</button>
+            <button type="button" data-action="${req.isArchived ? "restore-req" : "archive-req"}" data-id="${req.id}">
+              ${req.isArchived ? "恢复" : "归档"}
+            </button>
           </div>
         </div>
       </article>
@@ -451,6 +460,9 @@
         <div class="compact-actions">
           <button type="button" data-action="edit-req" data-id="${req.id}">编辑</button>
           <button type="button" data-action="duplicate-req" data-id="${req.id}">复制</button>
+          <button type="button" data-action="${req.isArchived ? "restore-req" : "archive-req"}" data-id="${req.id}">
+            ${req.isArchived ? "恢复事项" : "归档事项"}
+          </button>
           <button type="button" data-action="complete-req" data-id="${req.id}">完成</button>
         </div>
       </div>
@@ -1699,7 +1711,10 @@
       try {
         const payload = await collectForm(form, fields);
         const success = await onSubmit(payload);
-        if (success !== false) closeModal();
+        if (success !== false) {
+          await saveState();
+          closeModal();
+        }
       } catch (error) {
         toast("保存失败，请重新选择图片后再试。");
       } finally {
@@ -3020,31 +3035,74 @@
   }
 
   async function loadState() {
+    const localData = readLocalSnapshot();
     try {
       const db = await openDb();
       const data = await idbGet(db, STATE_KEY);
       db.close();
-      return data;
+      return pickLatestState(data, localData);
     } catch (error) {
-      const fallback = localStorage.getItem(DB_NAME);
-      return fallback ? JSON.parse(fallback) : null;
+      return localData;
     }
   }
 
   function persistSoon() {
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(saveState, 180);
+    const snapshot = createStateSnapshot();
+    persistLocalSnapshot(snapshot);
+    saveTimer = window.setTimeout(() => saveState(snapshot), 120);
   }
 
-  async function saveState() {
-    const snapshot = deepClone(state);
+  function persistNow() {
+    window.clearTimeout(saveTimer);
+    const snapshot = createStateSnapshot();
+    persistLocalSnapshot(snapshot);
+    saveState(snapshot);
+  }
+
+  async function saveState(snapshot = createStateSnapshot()) {
+    persistLocalSnapshot(snapshot);
     try {
       const db = await openDb();
       await idbSet(db, STATE_KEY, snapshot);
       db.close();
     } catch (error) {
-      localStorage.setItem(DB_NAME, JSON.stringify(snapshot));
+      persistLocalSnapshot(snapshot);
     }
+  }
+
+  function createStateSnapshot() {
+    const snapshot = deepClone(state);
+    snapshot.savedAt = nowIso();
+    return snapshot;
+  }
+
+  function persistLocalSnapshot(snapshot) {
+    try {
+      localStorage.setItem(LOCAL_BACKUP_KEY, JSON.stringify(snapshot));
+    } catch (error) {
+      // IndexedDB remains the primary store when notes contain large images.
+    }
+  }
+
+  function readLocalSnapshot() {
+    try {
+      const raw = localStorage.getItem(LOCAL_BACKUP_KEY) || localStorage.getItem(DB_NAME);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function pickLatestState(idbData, localData) {
+    if (!idbData) return localData;
+    if (!localData) return idbData;
+    return stateTimestamp(localData) > stateTimestamp(idbData) ? localData : idbData;
+  }
+
+  function stateTimestamp(data) {
+    const stamps = [data?.savedAt, ...(data?.requirements || []).map((req) => req.updatedAt), ...(data?.notePages || []).map((page) => page.updatedAt || page.createdAt)];
+    return Math.max(0, ...stamps.map((stamp) => new Date(stamp || 0).getTime()).filter((stamp) => !Number.isNaN(stamp)));
   }
 
   function openDb() {

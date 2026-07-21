@@ -6,9 +6,17 @@ if ($args -contains "-DryRun") {
 $ErrorActionPreference = "Stop"
 
 $AppRoot = Join-Path -Path $PSScriptRoot -ChildPath "app"
-$ProfileRoot = Join-Path -Path $PSScriptRoot -ChildPath "profile"
-$LogRoot = Join-Path -Path $PSScriptRoot -ChildPath "logs"
+$DataRoot = if ($env:LOCALAPPDATA) { Join-Path -Path $env:LOCALAPPDATA -ChildPath "RDTracker" } else { Join-Path -Path $PSScriptRoot -ChildPath "data" }
+$ProfileRoot = Join-Path -Path $DataRoot -ChildPath "profile"
+$LogRoot = Join-Path -Path $DataRoot -ChildPath "logs"
+$LegacyProfileRoot = Join-Path -Path $PSScriptRoot -ChildPath "profile"
+New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
+if ((-not (Test-Path -LiteralPath $ProfileRoot)) -and (Test-Path -LiteralPath $LegacyProfileRoot)) {
+    Copy-Item -LiteralPath $LegacyProfileRoot -Destination $ProfileRoot -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $ProfileRoot, $LogRoot | Out-Null
+
+$PreferredPort = 18765
 
 function Get-FreePort {
     param([int]$StartPort = 18765)
@@ -26,6 +34,55 @@ function Get-FreePort {
     }
 
     throw "No free local port was found."
+}
+
+function Test-PortOpen {
+    param([int]$Port)
+
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $client.Connect("127.0.0.1", $Port)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
+}
+
+function Get-AppServerProcesses {
+    param([string]$Directory)
+
+    $appRootFull = [System.IO.Path]::GetFullPath($Directory)
+    Get-CimInstance Win32_Process -Filter "name = 'python.exe'" |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine.Contains("-m http.server") -and
+            $_.CommandLine.Contains("--directory") -and
+            $_.CommandLine.Contains($appRootFull)
+        } |
+        ForEach-Object {
+            $port = $null
+            if ($_.CommandLine -match "-m\s+http\.server\s+(\d+)") {
+                $port = [int]$Matches[1]
+            }
+            [pscustomobject]@{
+                ProcessId = $_.ProcessId
+                Port = $port
+                CommandLine = $_.CommandLine
+            }
+        }
+}
+
+function Stop-NonPreferredAppServers {
+    param(
+        [string]$Directory,
+        [int]$PreferredPort
+    )
+
+    Get-AppServerProcesses -Directory $Directory |
+        Where-Object { $_.Port -and $_.Port -ne $PreferredPort } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 }
 
 function Resolve-Python {
@@ -56,21 +113,31 @@ if (-not (Test-Path (Join-Path -Path $AppRoot -ChildPath "index.html"))) {
 }
 
 $serverProcess = $null
-$port = Get-FreePort
+$port = $PreferredPort
 $python = Resolve-Python
+$reusedServer = $false
 
 if ($python) {
-    $serverOutLog = Join-Path -Path $LogRoot -ChildPath "server.out.log"
-    $serverErrLog = Join-Path -Path $LogRoot -ChildPath "server.err.log"
-    $serverProcess = Start-Process `
-        -FilePath $python `
-        -ArgumentList @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $AppRoot) `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $serverOutLog `
-        -RedirectStandardError $serverErrLog `
-        -PassThru
+    Stop-NonPreferredAppServers -Directory $AppRoot -PreferredPort $PreferredPort
+    $existingServer = Get-AppServerProcesses -Directory $AppRoot | Where-Object { $_.Port -eq $PreferredPort } | Select-Object -First 1
+    if ($existingServer) {
+        $reusedServer = $true
+    } else {
+        if (Test-PortOpen -Port $PreferredPort) {
+            throw "127.0.0.1:$PreferredPort is occupied. Close the existing RD Tracker window or stop the process using this port, then start again."
+        }
+        $serverOutLog = Join-Path -Path $LogRoot -ChildPath "server.out.log"
+        $serverErrLog = Join-Path -Path $LogRoot -ChildPath "server.err.log"
+        $serverProcess = Start-Process `
+            -FilePath $python `
+            -ArgumentList @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $AppRoot) `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $serverOutLog `
+            -RedirectStandardError $serverErrLog `
+            -PassThru
 
-    Start-Sleep -Milliseconds 700
+        Start-Sleep -Milliseconds 700
+    }
     $url = "http://127.0.0.1:$port/index.html"
 } else {
     $indexPath = ((Resolve-Path (Join-Path -Path $AppRoot -ChildPath "index.html")).Path) -replace "\\", "/"
@@ -87,6 +154,8 @@ if ($DryRun) {
         python = $python
         edge = $edge
         serverStarted = [bool]$serverProcess
+        reusedServer = $reusedServer
+        profileRoot = $ProfileRoot
     } | ConvertTo-Json
 
     if ($serverProcess -and -not $serverProcess.HasExited) {
